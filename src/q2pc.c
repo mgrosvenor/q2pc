@@ -2,9 +2,9 @@
 #include "../deps/chaste/chaste.h"
 #include "../deps/chaste/options/options.h"
 
-#include "q2pc_server.h"
-#include "q2pc_client.h"
-#include "q2pc_transport.h"
+#include "server/q2pc_server.h"
+#include "client/q2pc_client.h"
+#include "transport/q2pc_transport.h"
 
 USE_CH_LOGGER(CH_LOG_LVL_INFO,true,ch_log_tostderr,NULL);
 USE_CH_OPTIONS;

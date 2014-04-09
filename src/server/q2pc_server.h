@@ -8,8 +8,8 @@
 #ifndef Q2PC_SERVER_H_
 #define Q2PC_SERVER_H_
 
-#include "../deps/chaste/chaste.h"
-#include "q2pc_transport.h"
+#include "../../deps/chaste/chaste.h"
+#include "../transport/q2pc_transport.h"
 
 void run_server(const i64 client_count , const transport_s* transport);
 
