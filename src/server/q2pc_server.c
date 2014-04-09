@@ -12,7 +12,7 @@ void run_server(const i64 client_count , const transport_s* transport)
 {
 
     q2pc_trans_server* trans = server_factory(transport,client_count);
-    (void) trans;
+    trans->delete(trans);
 
 
     return;

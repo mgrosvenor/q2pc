@@ -33,6 +33,8 @@ static struct {
 	char* log_filename;
 	i64 log_verbosity;
 
+	i64 port;
+
 } options;
 
 
@@ -48,6 +50,8 @@ int main(int argc, char** argv)
     ch_opt_addbi(CH_OPTION_FLAG,    'U',"udp-nm","Use NetMap based UDP transport", &options.trans_udp_nm, false);
     ch_opt_addbi(CH_OPTION_FLAG,    'R',"rdp-nm","Use NetMap based RDP transport", &options.trans_rdp_nm, false);
     ch_opt_addbi(CH_OPTION_FLAG,    'Q',"udp-qj","Use NetMap based UDP transport over Q-Jump", &options.trans_udp_qj, false);
+
+    ch_opt_addii(CH_OPTION_OPTIONAL,'p',"port","Port to use for all transports", &options.port, 7331);
 
     //Qjump Transport options
     ch_opt_addii(CH_OPTION_OPTIONAL, 'E',"qjump-epoch", "The Q-Jump epoch in microseconds", &options.qjump_epoch, 100 );
@@ -134,6 +138,7 @@ int main(int argc, char** argv)
     transport.type          = options.trans_udp_qj ? udp_qj : transport.type;
     transport.qjump_epoch   = options.qjump_epoch;
     transport.qjump_limit   = options.qjump_psize;
+    transport.port          = options.port;
 
 
     //Configure application options

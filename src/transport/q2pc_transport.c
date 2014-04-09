@@ -13,7 +13,7 @@
 q2pc_trans_server* server_factory(const transport_s* transport, i64 client_count)
 {
     switch(transport->type){
-        case tcp_ln: return q2pc_sever_tcp_construct(client_count);
+        case tcp_ln: return q2pc_sever_tcp_construct(transport, client_count);
         default: ch_log_fatal("Not implemented\n");
     }
 
