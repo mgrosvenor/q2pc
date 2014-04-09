@@ -10,6 +10,7 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <errno.h>
+#include <fcntl.h>
 
 #include "q2pc_trans_server_tcp.h"
 
@@ -96,6 +97,14 @@ static void init(q2pc_server_tcp_server_priv* priv, i64 client_count, const tran
     if(unlikely( result < 0 )){
         ch_log_fatal("TCP server listen failed: %s\n",strerror(errno));
     }
+
+    int flags = 0;
+    flags &= ~O_NONBLOCK;
+    if( fcntl(priv->fd, F_SETFL, flags) == -1){
+        ch_log_fatal("Could not non-blocking: %s\n",strerror(errno));
+    }
+
+    ch_log_debug1("Done constructing for %li clients\n", client_count);
 
 }
 
