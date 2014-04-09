@@ -3,6 +3,7 @@
 	<name>q2pc</name>
 	<comment></comment>
 	<projects>
+		<project>libchaste</project>
 	</projects>
 	<buildSpec>
 		<buildCommand>

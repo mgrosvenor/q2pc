@@ -21,8 +21,8 @@
 #set -x
 
 CFLAGS="-Ideps -Ideps -D_XOPEN_SOURCE=700 -D_BSD_SOURCE -std=c11 -Werror -Wall -Wextra -pedantic -Wno-missing-field-initializers"
-LINKFLAGS="-lrt"
-#LINKFLAGS="-Ldeps/chaste -lchaste -lrt"
+#LINKFLAGS="-lrt"
+LINKFLAGS="-Ldeps/chaste -lrt"
 #CAKECONFIG=$(build/cake/cake-config-chooser)
 CAKECONFIG=cake.conf
 #TESTS="--begintests  tests/*.c --endtests"
