@@ -102,11 +102,6 @@ int main(int argc, char** argv)
         ch_log_settings.output_mode = ch_log_tofile;
     }
 
-    //Configure application options
-    if(options.server && options.client ){
-        ch_log_fatal("Q2PC: Configuration error, must be in client or server mode, not both.\n");
-    }
-
     i64 transport_opt_count = 0;
     transport_opt_count += options.trans_udp_ln ? 1 : 0;
     transport_opt_count += options.trans_tcp_ln ? 1 : 0;
@@ -139,6 +134,15 @@ int main(int argc, char** argv)
     transport.type          = options.trans_udp_qj ? udp_qj : transport.type;
     transport.qjump_epoch   = options.qjump_epoch;
     transport.qjump_limit   = options.qjump_psize;
+
+
+    //Configure application options
+    if(options.client && options.server ){
+        ch_log_fatal("Q2PC: Configuration error, must be in client or server mode, not both.\n");
+    }
+    if(!options.client && !options.server ){
+        ch_log_fatal("Q2PC: Configuration error, in server mode, you must specify at least 1 client.\n");
+    }
 
     if(options.client){
         run_client(options.client,&transport);

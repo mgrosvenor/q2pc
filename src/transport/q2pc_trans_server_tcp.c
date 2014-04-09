@@ -18,6 +18,8 @@ typedef struct {
 
 q2pc_trans_server* q2pc_sever_tcp_construct(i64 client_count)
 {
-    (void)client_count;
+    for(int i = 0; i < client_count; i++){
+
+    }
     return NULL;
 }
