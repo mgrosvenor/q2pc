@@ -108,13 +108,13 @@ int main(int argc, char** argv)
     }
 
     i64 transport_opt_count = 0;
-    printf("tcp=%u, udp=%u, udp-nm=%u rdp-nm=%u qj=%u\n", options.trans_tcp_ln, options.trans_udp_ln, options.trans_udp_nm, options.trans_rdp_nm, options.trans_udp_qj);
     transport_opt_count += options.trans_udp_ln ? 1 : 0;
     transport_opt_count += options.trans_tcp_ln ? 1 : 0;
     transport_opt_count += options.trans_udp_nm ? 1 : 0;
     transport_opt_count += options.trans_rdp_nm ? 1 : 0;
     transport_opt_count += options.trans_udp_qj ? 1 : 0;
-    printf("Count=%li\n",transport_opt_count);
+
+    //Make sure only 1 choice has been made
     if(transport_opt_count > 1){
         ch_log_fatal("Q2PC: Can only use one transport at a time, you've selected the following [%s%s%s%s%s ]\n ",
                 options.trans_udp_ln ? "udp-ln " : "",
