@@ -28,6 +28,6 @@ CAKECONFIG=cake.conf
 #TESTS="--begintests  tests/*.c --endtests"
 TESTS=""
 
-SRC=src/1paq.c
+SRC=src/q2pc.c
 
 build/cake/cake $SRC --config=build/cake/$CAKECONFIG --append-CFLAGS="$CFLAGS"  --LINKFLAGS="$LINKFLAGS"  --LINKFLAGS="$LINKFLAGS" $@ $TEST 
