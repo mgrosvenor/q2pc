@@ -297,7 +297,7 @@ typedef struct {
 
 
 
-static int beg_write_all(struct q2pc_trans_conn_s* this, char** data_o, i64* len_o)
+static int beg_write_all(struct q2pc_trans_server_s* this, char** data_o, i64* len_o)
 {
     q2pc_server_tcp_server_priv* priv = (q2pc_server_tcp_server_priv*)this->priv;
     if(!priv->connections){
@@ -310,7 +310,7 @@ static int beg_write_all(struct q2pc_trans_conn_s* this, char** data_o, i64* len
     return 0;
 }
 
-static int end_write_all(struct q2pc_trans_conn_s* this, i64 len)
+static int end_write_all(struct q2pc_trans_server_s* this, i64 len)
 {
     q2pc_server_tcp_server_priv* priv = (q2pc_server_tcp_server_priv*)this->priv;
     if(!priv->connections){

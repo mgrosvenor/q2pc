@@ -169,6 +169,27 @@ void* run_thread( void* p)
 }
 
 
+void send_request()
+{
+    char* data;
+    i64 len;
+    if(trans->beg_write_all(trans,&data,&len)){
+        ch_log_fatal("Could not complete broadcast message request\n");
+    }
+
+    if(len < (i64)sizeof(q2pc_msg)){
+        ch_log_fatal("Not enough space to send a Q2PC message. Needed %li, but found %li\n", sizeof(q2pc_msg), len);
+    }
+
+    q2pc_msg* msg = (q2pc_msg*)data;
+    msg->src_hostid = ~0LL;
+    msg->vote       = ~0ULL;
+
+    //Commit it
+    trans->end_write_all(trans, sizeof(q2pc_msg));
+
+}
+
 
 void run_server(const i64 thread_count, const i64 client_count , const transport_s* transport)
 {
@@ -176,11 +197,26 @@ void run_server(const i64 thread_count, const i64 client_count , const transport
     server_init(thread_count, client_count, transport);
 
     while(1){
-        //send out a broadcast message.
+        //send out a broadcast message to all servers
+        send_request();
 
         //wait for all the responses
+        sleep(1);
+
+        //Stop all the receiver threads
+        dopause_all();
 
         //evaluate
+        for(int i = 0; i < client_count; i++){
+            __builtin_prefetch(votes_scoreboard + i + 1);
+            if(votes_scoreboard[i] == 0){
+                ch_log_debug1("client %li voted no. Vote failed\n");
+                break;
+            }
+        }
+
+        //Restart
+        unpause_all();
     }
 
 }
