@@ -13,13 +13,13 @@ void run_server(const i64 client_count , const transport_s* transport)
 {
 
     q2pc_trans_server* trans = server_factory(transport,client_count);
-    CH_VECTOR(TRANS_CONN)* cons = trans->connectall(trans, client_count);
+    CH_ARRAY(TRANS_CONN)* cons = trans->connectall(trans, client_count);
     while(1){
         for(int i = 0; i < client_count; i++){
             q2pc_trans_conn* con = cons->off(cons,i);
             char* data = NULL;
             i64 len = 0;
-            i64 result = con->read(con,&data, &len);
+            i64 result = con->beg_read(con,&data, &len);
             if(result != Q2PC_ENONE){
                 continue;
             }
