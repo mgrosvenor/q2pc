@@ -15,6 +15,7 @@
 #include "q2pc_trans_server_tcp.h"
 #include "conn_vector.h"
 #include "../errors/errors.h"
+#include "../protocol/q2pc_protocol.h"
 
 typedef struct {
     int fd;
@@ -45,9 +46,13 @@ typedef struct {
 
 i64 delimit(char* buff, i64 len)
 {
-    (void)len;
     (void)buff;
-    return 6;
+
+    if(len >= (i64)sizeof(q2pc_msg)){
+        return (i64)sizeof(q2pc_msg);
+    }
+
+    return 0;
 }
 
 

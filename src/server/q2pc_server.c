@@ -5,17 +5,92 @@
  *      Author: mgrosvenor
  */
 
+ //#LINKFLAGS=-lpthread
+
+#include <stdlib.h>
+#include <pthread.h>
+#include <signal.h>
+
 #include "q2pc_server.h"
 #include "../transport/q2pc_transport.h"
 #include "../errors/errors.h"
 
-void run_server(const i64 client_count , const transport_s* transport)
+
+
+static CH_ARRAY(TRANS_CONN)* cons = NULL;
+
+typedef struct{
+    i64 lo;
+    i64 hi;
+} thread_params_t;
+
+void* run_thread( void* p);
+
+
+static bool stop_signal;
+void term(int signo)
+{
+    (void)signo;
+    stop_signal = true;
+}
+
+void run_server(const i64 thread_count, const i64 client_count , const transport_s* transport)
 {
 
+    //Signal handling for the main thread
+    signal(SIGHUP,  term);
+    signal(SIGKILL, term);
+    signal(SIGTERM, term);
+
+    //Set up all the connections
     q2pc_trans_server* trans = server_factory(transport,client_count);
     CH_ARRAY(TRANS_CONN)* cons = trans->connectall(trans, client_count);
-    while(1){
-        for(int i = 0; i < client_count; i++){
+    trans->delete(trans);
+
+
+    //Calculate the connection to thread mappins
+    i64 cons_per_thread = MIN(client_count / thread_count, 1);
+    i64 real_thread_count         = MIN(thread_count, client_count);
+    i64 lo = 0;
+    i64 hi = lo + cons_per_thread;
+
+    //Fire up the threads
+    pthread_t* threads = (pthread_t*)calloc(real_thread_count, sizeof(pthread_t));
+    for(int i = 0; i < real_thread_count; i++){
+        ch_log_debug2("Starting thread %i with connections %li to %li\n", i, lo, hi);
+
+        //Do this to avoid synchronisation errors
+        thread_params_t* params = (thread_params_t*)malloc(sizeof(thread_params_t));
+        if(!params){
+            ch_log_fatal("Cannot allocate thread paramters\n");
+        }
+
+        pthread_create(threads + i, NULL, run_thread, (void*)params);
+
+        lo++;
+        hi = lo + cons_per_thread;
+        hi = MIN(cons->size,hi); //Clip so we don't go over the bounds
+    }
+
+    //Wait for them to finish
+    for(int i = 0; i < real_thread_count; i++){
+        pthread_join(threads[i],NULL);
+    }
+
+    return;
+}
+
+
+
+void* run_thread( void* p)
+{
+    thread_params_t* params = (thread_params_t*)p;
+    i64 lo = params->lo;
+    i64 hi = params->hi;
+    free(params);
+
+    while(!stop_signal){
+        for(int i = lo; i < hi; i++){
             q2pc_trans_conn* con = cons->off(cons,i);
             char* data = NULL;
             i64 len = 0;
@@ -29,7 +104,12 @@ void run_server(const i64 client_count , const transport_s* transport)
             con->end_read(con);
         }
     }
-    trans->delete(trans);
 
-    return;
+
+    for(int i = lo; i < hi; i++){
+        q2pc_trans_conn* con = cons->off(cons,i);
+        con->delete(con);
+    }
+
+    return NULL;
 }

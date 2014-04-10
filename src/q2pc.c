@@ -13,6 +13,7 @@ static struct {
 	//General Options
 	i64 server;
 	char* client;
+	i64 threads;
 
 	//Transports
 	bool trans_tcp_ln;
@@ -42,6 +43,7 @@ int main(int argc, char** argv)
 {
 	//General options
     ch_opt_addii(CH_OPTION_OPTIONAL,'s',"server","Put q2pc in server mode, specify the number of clients", &options.server, 0);
+    ch_opt_addii(CH_OPTION_OPTIONAL,'T',"threads","The number of threads to use", &options.threads, 1);
     ch_opt_addsi(CH_OPTION_OPTIONAL,'c',"client","Put q2pc in client mode, specify server address in x.x.x.x format", &options.client, NULL);
 
     //Transports
@@ -153,7 +155,7 @@ int main(int argc, char** argv)
         run_client(options.client,&transport);
     }
     else{
-        run_server(options.server,&transport);
+        run_server(options.threads, options.server,&transport);
     }
 
     return 0;
