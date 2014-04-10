@@ -10,10 +10,19 @@
 
 #include "../../deps/chaste/chaste.h"
 
+typedef enum {
+    q2pc_lost_msg = -1,
+    q2pc_request_msg = 0,
+    q2pc_vote_yes_msg,
+    q2pc_vote_no_msg,
+    q2pc_commit_msg,
+    q2pc_cancel_msg,
+    q2pc_ack_msg
+} q2pc_msg_type_t;
 
 typedef struct __attribute__((__packed__)) {
+    i32 type;
     i32 src_hostid;
-    i64 vote;
 } q2pc_msg;
 
 #endif /* Q2PC_PROTOCOL_H_ */
