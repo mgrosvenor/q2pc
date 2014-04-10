@@ -177,6 +177,8 @@ static int conn_end_delimit(struct q2pc_trans_conn_s* this)
 
         //If there is nothing left over, give up and bug out
         if(!priv->delim_buffer_used){
+            priv->delim_result_len= 0;
+            priv->delim_result= NULL;
             return 0;
         }
 
@@ -270,7 +272,7 @@ static void conn_delete(struct q2pc_trans_conn_s* this)
 
 //Wait for all clients to connect
 static CH_ARRAY(TRANS_CONN)* doconnectall(struct q2pc_trans_server_s* this, i64 client_count )
-                {
+{
     q2pc_server_tcp_server_priv* priv = (q2pc_server_tcp_server_priv*)this->priv;
 
     CH_ARRAY(TRANS_CONN)* result = CH_ARRAY_NEW(TRANS_CONN,client_count,NULL);
@@ -312,7 +314,7 @@ static CH_ARRAY(TRANS_CONN)* doconnectall(struct q2pc_trans_server_s* this, i64 
 
         new_priv->fd = accept_fd;
         int flags = 0;
-        flags &= ~O_NONBLOCK;
+        flags |= O_NONBLOCK;
         if( fcntl(new_priv->fd, F_SETFL, flags) == -1){
             ch_log_fatal("Could not set non-blocking on fd=%i: %s\n",new_priv,strerror(errno));
         }
@@ -330,7 +332,7 @@ static CH_ARRAY(TRANS_CONN)* doconnectall(struct q2pc_trans_server_s* this, i64 
 
 
     return result;
-                }
+}
 
 static void serv_delete(struct q2pc_trans_server_s* this)
 {
