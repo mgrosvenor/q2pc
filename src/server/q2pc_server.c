@@ -143,6 +143,7 @@ void* run_thread( void* p)
 
             if(msg->src_hostid < 0 || msg->src_hostid > count){
                 ch_log_warn("Client ID (%li) is out of the expected range [%i,%i]. Ignoring vote\n", msg->src_hostid, 0, count);
+                con->end_read(con);
                 continue;
             }
 
