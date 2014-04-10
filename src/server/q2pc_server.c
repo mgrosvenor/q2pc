@@ -198,6 +198,12 @@ void run_server(const i64 thread_count, const i64 client_count , const transport
     server_init(thread_count, client_count, transport);
 
     while(1){
+        //Init the scoreboard
+        for(int i = 0; i < client_count; i++){
+            __builtin_prefetch(votes_scoreboard + i + 1);
+            votes_scoreboard[i] = -1;
+        }
+
         //send out a broadcast message to all servers
         send_request();
 
@@ -208,10 +214,16 @@ void run_server(const i64 thread_count, const i64 client_count , const transport
         dopause_all();
 
         //evaluate
+        bool failed = false;
         for(int i = 0; i < client_count; i++){
+            __builtin_prefetch(votes_scoreboard + i + 1);
+            if(votes_scoreboard[i] == -1){
+                ch_log_debug1("client %li did not vote.\n",i);
+                failed = true;
+            }
             if(votes_scoreboard[i] == 0){
-                ch_log_debug1("client %li voted no. Vote failed\n");
-                break;
+                ch_log_debug1("client %li voted no.\n",i);
+                failed = true;
             }
         }
 
