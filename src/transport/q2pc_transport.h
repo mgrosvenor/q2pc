@@ -9,6 +9,7 @@
 #define Q2PC_TRANSPORT_H_
 
 #include "../../deps/chaste/chaste.h"
+#include "conn_vector.h"
 
 
 typedef enum { udp_ln = 0, tcp_ln, udp_nm, rdp_nm, udp_qj } transport_e;
@@ -42,7 +43,7 @@ typedef struct q2pc_trans_conn_s {
 } q2pc_trans_conn;
 
 typedef struct q2pc_trans_server_s {
-    int (*connect)(struct q2pc_trans_server_s* this, i64 client_count, q2pc_trans_conn* con);
+    CH_VECTOR(TRANS_CONN)* (*connectall)(struct q2pc_trans_server_s* this, i64 client_count );
     void (*delete)(struct q2pc_trans_server_s* this);
 
     void* priv;
