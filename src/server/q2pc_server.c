@@ -54,10 +54,6 @@ void term(int signo)
         trans->delete(trans);
     }
 
-    if(cons){
-        cons->delete(cons);
-    }
-
     ch_log_info("Terminating... Done.\n");
     exit(0);
 }
@@ -79,7 +75,11 @@ void server_init(const i64 thread_count, const i64 client_count , const transpor
 
     //Set up and init the voting scoreboard
     votes_scoreboard = aligned_alloc(sizeof(i64), sizeof(i64) * client_count);
-    bzero(&votes_scoreboard,sizeof(i64) * client_count);
+    if(!votes_scoreboard){
+        ch_log_fatal("Could not allocate memory for votes scoreboard\n");
+    }
+
+    bzero(votes_scoreboard,sizeof(i64) * client_count);
 
     //Set up all the connections
     ch_log_debug1("Waiting for clients to connect...\n");
@@ -114,6 +114,7 @@ void server_init(const i64 thread_count, const i64 client_count , const transpor
         hi = lo + cons_per_thread;
         hi = MIN(cons->size,hi); //Clip so we don't go over the bounds
     }
+
 }
 
 
@@ -201,14 +202,13 @@ void run_server(const i64 thread_count, const i64 client_count , const transport
         send_request();
 
         //wait for all the responses
-        sleep(1);
+        usleep(200000);
 
         //Stop all the receiver threads
         dopause_all();
 
         //evaluate
         for(int i = 0; i < client_count; i++){
-            __builtin_prefetch(votes_scoreboard + i + 1);
             if(votes_scoreboard[i] == 0){
                 ch_log_debug1("client %li voted no. Vote failed\n");
                 break;
