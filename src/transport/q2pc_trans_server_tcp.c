@@ -170,6 +170,10 @@ static int conn_beg_delimit(struct q2pc_trans_conn_s* this, char** data_o, i64* 
 static int conn_end_delimit(struct q2pc_trans_conn_s* this)
 {
     q2pc_server_tcp_conn_priv* priv = this->priv;
+    if(!priv->delim_result){
+        return 0;
+    }
+
 
     char* result_head_next = (char*)priv->delim_result + priv->delim_result_len;
 

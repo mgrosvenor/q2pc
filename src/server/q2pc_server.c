@@ -30,8 +30,11 @@ void* run_thread( void* p);
 static bool stop_signal;
 void term(int signo)
 {
+    ch_log_info("Terminating...\n");
     (void)signo;
     stop_signal = true;
+    sleep(1);
+    exit(0);
 }
 
 void run_server(const i64 thread_count, const i64 client_count , const transport_s* transport)
@@ -41,11 +44,14 @@ void run_server(const i64 thread_count, const i64 client_count , const transport
     signal(SIGHUP,  term);
     signal(SIGKILL, term);
     signal(SIGTERM, term);
+    signal(SIGINT, term);
 
     //Set up all the connections
+    ch_log_debug1("Waiting for clients to connect...\n");
     q2pc_trans_server* trans = server_factory(transport,client_count);
-    CH_ARRAY(TRANS_CONN)* cons = trans->connectall(trans, client_count);
+    cons = trans->connectall(trans, client_count);
     trans->delete(trans);
+    ch_log_debug1("Waiting for clients to connect... Done.\n");
 
 
     //Calculate the connection to thread mappins
@@ -60,10 +66,12 @@ void run_server(const i64 thread_count, const i64 client_count , const transport
         ch_log_debug2("Starting thread %i with connections %li to %li\n", i, lo, hi);
 
         //Do this to avoid synchronisation errors
-        thread_params_t* params = (thread_params_t*)malloc(sizeof(thread_params_t));
+        thread_params_t* params = (thread_params_t*)calloc(1,sizeof(thread_params_t));
         if(!params){
             ch_log_fatal("Cannot allocate thread paramters\n");
         }
+        params->lo = lo;
+        params->hi = hi;
 
         pthread_create(threads + i, NULL, run_thread, (void*)params);
 
