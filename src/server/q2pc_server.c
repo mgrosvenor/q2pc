@@ -28,12 +28,18 @@ void* run_thread( void* p);
 
 
 static bool stop_signal;
+pthread_t* threads = NULL;
+i64 real_thread_count = 0;
 void term(int signo)
 {
     ch_log_info("Terminating...\n");
     (void)signo;
     stop_signal = true;
-    sleep(1);
+    if(threads){
+        for(int i = 0; i < real_thread_count; i++){
+            pthread_join(threads[i],NULL);
+        }
+    }
     exit(0);
 }
 
@@ -56,12 +62,12 @@ void run_server(const i64 thread_count, const i64 client_count , const transport
 
     //Calculate the connection to thread mappins
     i64 cons_per_thread = MIN(client_count / thread_count, 1);
-    i64 real_thread_count         = MIN(thread_count, client_count);
+    real_thread_count  = MIN(thread_count, client_count);
     i64 lo = 0;
     i64 hi = lo + cons_per_thread;
 
     //Fire up the threads
-    pthread_t* threads = (pthread_t*)calloc(real_thread_count, sizeof(pthread_t));
+    threads = (pthread_t*)calloc(real_thread_count, sizeof(pthread_t));
     for(int i = 0; i < real_thread_count; i++){
         ch_log_debug2("Starting thread %i with connections %li to %li\n", i, lo, hi);
 
