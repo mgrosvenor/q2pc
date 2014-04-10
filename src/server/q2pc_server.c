@@ -20,11 +20,12 @@ void run_server(const i64 client_count , const transport_s* transport)
             char* data = NULL;
             i64 len = 0;
             i64 result = con->beg_read(con,&data, &len);
-            ch_log_debug2("Got %lu bytes in read: %.*s\n", len, len, data);
-
             if(result != Q2PC_ENONE){
+                con->end_read(con);
                 continue;
             }
+
+            ch_log_debug2("Got %lu bytes in read: %.*s\n", len, len, data);
             con->end_read(con);
         }
     }
