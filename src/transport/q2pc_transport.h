@@ -36,7 +36,7 @@ q2pc_trans_client* client_factory(const transport_s* transport);
 
 typedef struct q2pc_trans_conn_s {
     int (*read)(struct q2pc_trans_conn_s* this, char** data, i64* len);
-    int (*write)(struct q2pc_trans_conn_s* this, char** data, i64* len);
+    int (*write)(struct q2pc_trans_conn_s* this, char* data, i64 len);
     void (*delete)(struct q2pc_trans_conn_s* this);
 
     void* priv;

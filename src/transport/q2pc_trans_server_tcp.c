@@ -27,10 +27,6 @@ typedef struct {
     i64   read_working_buffer_used;
     i64   read_working_buffer_size;
 
-    //
-    void* write_buffer;
-    i64   write_buffer_used;
-    i64   write_buffer_size;
 } q2pc_server_tcp_conn_priv;
 
 typedef struct {
@@ -43,7 +39,6 @@ int delimit(char* buff, int len)
     (void)buff;
     return 6;
 }
-
 
 
 
@@ -122,19 +117,31 @@ static int delimitor(struct q2pc_trans_conn_s* this, char** data_o, i64* len_o)
 
 
 
-static int conn_write(struct q2pc_trans_conn_s* this, char** data_o, i64* len_o)
+static int conn_write(struct q2pc_trans_conn_s* this, char* data, i64 len)
 {
-    (void)this;
-    (void)data_o;
-    (void)len_o;
+    q2pc_server_tcp_conn_priv* priv = (q2pc_server_tcp_conn_priv*)this->priv;
+    while(len > 0){
+        i64 written =  write(priv->fd, data,len);
+        data += written;
+        len -= written;
+    }
+
     return 0;
 }
 
 static void conn_delete(struct q2pc_trans_conn_s* this)
 {
-    (void)this;
-}
+    if(this){
+        if(this->priv){
+            q2pc_server_tcp_conn_priv* priv = (q2pc_server_tcp_conn_priv*)this->priv;
+            if(priv->read_buffer){ free(priv->read_buffer); }
+            if(priv->read_working_buffer){ free(priv->read_working_buffer); }
+            free(this->priv);
+        }
 
+        free(this);
+    }
+}
 
 
 
@@ -160,16 +167,14 @@ static CH_VECTOR(TRANS_CONN)* doconnectall(struct q2pc_trans_server_s* this, i64
             ch_log_fatal("Malloc failed!\n");
         }
 
-#define BUFF_SIZE (4096 * 1021) //A 4MB buffer. Just because
-        void* new_buffs = calloc(1,2 * BUFF_SIZE);
+        #define BUFF_SIZE (4096 * 1021) //A 4MB buffer. Just because
+        void* new_buffs = calloc(1,BUFF_SIZE);
         if(!new_buffs){
             ch_log_fatal("Malloc failed!\n");
         }
 
         new_priv->read_buffer = new_buffs;
-        new_priv->write_buffer = (char*)new_buffs + BUFF_SIZE;
         new_priv->read_buffer_size = BUFF_SIZE;
-        new_priv->write_buffer_size = BUFF_SIZE;
 
         new_priv->fd = accept_fd;
         int flags = 0;
