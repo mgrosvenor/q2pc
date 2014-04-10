@@ -14,7 +14,7 @@
 #include "q2pc_server.h"
 #include "../transport/q2pc_transport.h"
 #include "../errors/errors.h"
-
+#include "../protocol/q2pc_protocol.h"
 
 
 static CH_ARRAY(TRANS_CONN)* cons = NULL;
@@ -22,19 +22,27 @@ static CH_ARRAY(TRANS_CONN)* cons = NULL;
 typedef struct{
     i64 lo;
     i64 hi;
+    i64 count;
 } thread_params_t;
 
 void* run_thread( void* p);
 
+//Server wide global
+static volatile bool stop_signal = false;
+static volatile bool pause_signal = false;
+static pthread_t* threads = NULL;
+static i64 real_thread_count = 0;
+static i64* votes_scoreboard = NULL;
 
-static bool stop_signal;
-pthread_t* threads = NULL;
-i64 real_thread_count = 0;
+//Signal handler to terminate early
 void term(int signo)
 {
     ch_log_info("Terminating...\n");
     (void)signo;
+
     stop_signal = true;
+    __sync_synchronize(); //Full fence
+
     if(threads){
         for(int i = 0; i < real_thread_count; i++){
             pthread_join(threads[i],NULL);
@@ -42,6 +50,12 @@ void term(int signo)
     }
     exit(0);
 }
+
+
+//Pause/unpause worker threads
+void dopause_all(){ pause_signal = true;  __sync_synchronize(); }
+void unpause_all(){ pause_signal = false; __sync_synchronize(); }
+
 
 void run_server(const i64 thread_count, const i64 client_count , const transport_s* transport)
 {
@@ -51,6 +65,10 @@ void run_server(const i64 thread_count, const i64 client_count , const transport
     signal(SIGKILL, term);
     signal(SIGTERM, term);
     signal(SIGINT, term);
+
+    //Set up and init the voting scoreboard
+    votes_scoreboard = aligned_alloc(sizeof(i64), sizeof(i64) * client_count);
+    bzero(&votes_scoreboard,sizeof(i64) * client_count);
 
     //Set up all the connections
     ch_log_debug1("Waiting for clients to connect...\n");
@@ -76,8 +94,9 @@ void run_server(const i64 thread_count, const i64 client_count , const transport
         if(!params){
             ch_log_fatal("Cannot allocate thread paramters\n");
         }
-        params->lo = lo;
-        params->hi = hi;
+        params->lo      = lo;
+        params->hi      = hi;
+        params->count   = client_count;
 
         pthread_create(threads + i, NULL, run_thread, (void*)params);
 
@@ -99,11 +118,16 @@ void run_server(const i64 thread_count, const i64 client_count , const transport
 void* run_thread( void* p)
 {
     thread_params_t* params = (thread_params_t*)p;
-    i64 lo = params->lo;
-    i64 hi = params->hi;
+    i64 lo      = params->lo;
+    i64 hi      = params->hi;
+    i64 count   = params->count;
     free(params);
 
     while(!stop_signal){
+
+        //Busy loop if we're told to stop processing for a moment
+        if(pause_signal){ __asm__("pause"); continue; }
+
         for(int i = lo; i < hi; i++){
             q2pc_trans_conn* con = cons->off(cons,i);
             char* data = NULL;
@@ -114,7 +138,17 @@ void* run_thread( void* p)
                 continue;
             }
 
-            ch_log_debug2("Got %lu bytes in read: %.*s\n", len, len, data);
+            q2pc_msg* msg = (q2pc_msg*)data;
+            //Bounds check the answer
+
+            if(msg->src_hostid < 0 || msg->src_hostid > count){
+                ch_log_warn("Client ID (%li) is out of the expected range [%i,%i]. Ignoring vote\n", msg->src_hostid, 0, count);
+                continue;
+            }
+
+            votes_scoreboard[msg->src_hostid] = msg->vote;
+            ch_log_debug3("[%i] voted %s\n", msg->src_hostid, msg->vote ? "yes" : "no");
+
             con->end_read(con);
         }
     }

@@ -151,6 +151,12 @@ int main(int argc, char** argv)
         ch_log_fatal("Q2PC: Configuration error, in server mode, you must specify at least 1 client.\n");
     }
 
+
+
+
+    /********************************************************/
+    //real work begins here:
+    /********************************************************/
     if(options.client){
         run_client(options.client,&transport);
     }
