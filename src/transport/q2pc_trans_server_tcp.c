@@ -40,9 +40,6 @@ typedef struct {
 
 } q2pc_server_tcp_conn_priv;
 
-typedef struct {
-    int fd;
-} q2pc_server_tcp_server_priv;
 
 i64 delimit(char* buff, i64 len)
 {
@@ -251,6 +248,10 @@ static int conn_end_write(struct q2pc_trans_conn_s* this, i64 len)
     q2pc_server_tcp_conn_priv* priv = (q2pc_server_tcp_conn_priv*)this->priv;
     char* data = priv->write_buffer;
 
+    if(len > priv->write_buffer_size){
+        ch_log_fatal("Error: Wrote more data than the buffer could handle. Memory corruption is likely\n ");
+    }
+
     while(len > 0){
         i64 written =  write(priv->fd, data ,len);
         data += written;
@@ -279,6 +280,68 @@ static void conn_delete(struct q2pc_trans_conn_s* this)
 
 
 
+/***************************************************************************************************************************/
+
+typedef struct {
+    int fd;
+
+    void* write_all_buffer;
+    i64   write_all_buffer_used;
+    i64   write_all_buffer_size;
+
+
+    CH_ARRAY(TRANS_CONN)* connections;
+
+} q2pc_server_tcp_server_priv;
+
+
+
+
+static int beg_write_all(struct q2pc_trans_conn_s* this, char** data_o, i64* len_o)
+{
+    q2pc_server_tcp_server_priv* priv = (q2pc_server_tcp_server_priv*)this->priv;
+    if(!priv->connections){
+        return -1;
+    }
+
+    *data_o = priv->write_all_buffer;
+    *len_o  = priv->write_all_buffer_size;
+
+    return 0;
+}
+
+static int end_write_all(struct q2pc_trans_conn_s* this, i64 len)
+{
+    q2pc_server_tcp_server_priv* priv = (q2pc_server_tcp_server_priv*)this->priv;
+    if(!priv->connections){
+        return -1;
+    }
+    if(len > priv->write_all_buffer_size){
+        ch_log_fatal("Error: Wrote more data than the buffer could handle. Memory corruption is likely\n ");
+    }
+
+
+    for(int i = 0; i < priv->connections->size; i++){
+        q2pc_trans_conn* conn = priv->connections->off(priv->connections,i);
+        char* data = NULL;
+        i64 len = 0;
+
+        if(conn->beg_write(conn,&data,&len)){
+            ch_log_fatal("Could not begin write on connection %i\n", i);
+        }
+
+        memcpy(data,priv->write_all_buffer, len);
+
+        //Commit it
+        conn->end_write(conn, len);
+
+    }
+
+    return 0;
+
+}
+
+
 //Wait for all clients to connect
 static CH_ARRAY(TRANS_CONN)* doconnectall(struct q2pc_trans_server_s* this, i64 client_count )
 {
@@ -301,7 +364,7 @@ static CH_ARRAY(TRANS_CONN)* doconnectall(struct q2pc_trans_server_s* this, i64 
             ch_log_fatal("Malloc failed!\n");
         }
 
-        #define BUFF_SIZE (4096 * 1021) //A 4MB buffer. Just because
+        #define BUFF_SIZE (4096 * 1024) //A 4MB buffer. Just because
         void* read_buff = calloc(2,BUFF_SIZE);
         if(!read_buff){
             ch_log_fatal("Malloc failed!\n");
@@ -339,6 +402,8 @@ static CH_ARRAY(TRANS_CONN)* doconnectall(struct q2pc_trans_server_s* this, i64 
 
     }
 
+    //Keep a local copy for doing broadcast
+    priv->connections = result;
 
     return result;
 }
@@ -360,10 +425,14 @@ static void serv_delete(struct q2pc_trans_server_s* this)
 static void init(q2pc_server_tcp_server_priv* priv, i64 client_count, const transport_s* transport)
 {
 
-    ch_log_debug1("Constructing for %li clients\n", client_count);
-    for(int i = 0; i < client_count; i++){
-
+    ch_log_debug1("Constructing TCP transport\n", client_count);
+    #define BUFF_SIZE (4096 * 1024) //A 4MB buffer. Just because
+    void* write_all_buff = calloc(1,BUFF_SIZE);
+    if(!write_all_buff){
+        ch_log_fatal("Malloc for new write all buffer failed!\n");
     }
+    priv->write_all_buffer      = write_all_buff;
+    priv->write_all_buffer_size = BUFF_SIZE;
 
     priv->fd = socket(AF_INET,SOCK_STREAM,0);
     if (priv->fd < 0 ){
@@ -410,13 +479,9 @@ static void init(q2pc_server_tcp_server_priv* priv, i64 client_count, const tran
         ch_log_fatal("TCP server listen failed: %s\n",strerror(errno));
     }
 
-    //    int flags = 0;
-    //    flags &= ~O_NONBLOCK;
-    //    if( fcntl(priv->fd, F_SETFL, flags) == -1){
-    //        ch_log_fatal("Could not non-blocking: %s\n",strerror(errno));
-    //    }
+    ch_log_debug1("Done constructing TCP transport\n", client_count);
 
-    ch_log_debug1("Done constructing for %li clients\n", client_count);
+
 
 }
 
@@ -433,9 +498,12 @@ q2pc_trans_server* q2pc_sever_tcp_construct(const transport_s* transport, i64 cl
         ch_log_fatal("Could not allocate TCP server private structure\n");
     }
 
-    result->priv         = priv;
-    result->connectall   = doconnectall;
-    result->delete       = serv_delete;
+
+    result->priv          = priv;
+    result->connectall    = doconnectall;
+    result->delete        = serv_delete;
+    result->beg_write_all = beg_write_all;
+    result->end_write_all = end_write_all;
 
     init(priv, client_count, transport);
 

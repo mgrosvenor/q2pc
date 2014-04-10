@@ -49,6 +49,11 @@ typedef struct q2pc_trans_conn_s {
 
 typedef struct q2pc_trans_server_s {
     CH_ARRAY(TRANS_CONN)* (*connectall)(struct q2pc_trans_server_s* this, i64 client_count );
+
+    //Send a broadcast message to all transport connections
+    int (*beg_write_all)(struct q2pc_trans_conn_s* this, char** data, i64* len_o);
+    int (*end_write_all)(struct q2pc_trans_conn_s* this, i64 len_o);
+
     void (*delete)(struct q2pc_trans_server_s* this);
 
     void* priv;

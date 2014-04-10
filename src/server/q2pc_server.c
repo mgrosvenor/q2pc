@@ -33,6 +33,7 @@ static volatile bool pause_signal = false;
 static pthread_t* threads = NULL;
 static i64 real_thread_count = 0;
 static i64* votes_scoreboard = NULL;
+static q2pc_trans_server* trans;
 
 //Signal handler to terminate early
 void term(int signo)
@@ -48,6 +49,16 @@ void term(int signo)
             pthread_join(threads[i],NULL);
         }
     }
+
+    if(trans){
+        trans->delete(trans);
+    }
+
+    if(cons){
+        cons->delete(cons);
+    }
+
+    ch_log_info("Terminating... Done.\n");
     exit(0);
 }
 
@@ -57,7 +68,7 @@ void dopause_all(){ pause_signal = true;  __sync_synchronize(); }
 void unpause_all(){ pause_signal = false; __sync_synchronize(); }
 
 
-void run_server(const i64 thread_count, const i64 client_count , const transport_s* transport)
+void server_init(const i64 thread_count, const i64 client_count , const transport_s* transport)
 {
 
     //Signal handling for the main thread
@@ -72,9 +83,8 @@ void run_server(const i64 thread_count, const i64 client_count , const transport
 
     //Set up all the connections
     ch_log_debug1("Waiting for clients to connect...\n");
-    q2pc_trans_server* trans = server_factory(transport,client_count);
+    trans = server_factory(transport,client_count);
     cons = trans->connectall(trans, client_count);
-    trans->delete(trans);
     ch_log_debug1("Waiting for clients to connect... Done.\n");
 
 
@@ -92,7 +102,7 @@ void run_server(const i64 thread_count, const i64 client_count , const transport
         //Do this to avoid synchronisation errors
         thread_params_t* params = (thread_params_t*)calloc(1,sizeof(thread_params_t));
         if(!params){
-            ch_log_fatal("Cannot allocate thread paramters\n");
+            ch_log_fatal("Cannot allocate thread parameters\n");
         }
         params->lo      = lo;
         params->hi      = hi;
@@ -104,15 +114,7 @@ void run_server(const i64 thread_count, const i64 client_count , const transport
         hi = lo + cons_per_thread;
         hi = MIN(cons->size,hi); //Clip so we don't go over the bounds
     }
-
-    //Wait for them to finish
-    for(int i = 0; i < real_thread_count; i++){
-        pthread_join(threads[i],NULL);
-    }
-
-    return;
 }
-
 
 
 void* run_thread( void* p)
@@ -123,6 +125,7 @@ void* run_thread( void* p)
     i64 count   = params->count;
     free(params);
 
+    ch_log_debug3("Starting worker thread\n");
     while(!stop_signal){
 
         //Busy loop if we're told to stop processing for a moment
@@ -154,11 +157,31 @@ void* run_thread( void* p)
         }
     }
 
-
+    ch_log_debug3("Cleaning up connections...\n");
+    //We're done with the connections now, clean them up
     for(int i = lo; i < hi; i++){
         q2pc_trans_conn* con = cons->off(cons,i);
         con->delete(con);
     }
 
+    ch_log_debug3("Exiting worker thread\n");
     return NULL;
 }
+
+
+
+void run_server(const i64 thread_count, const i64 client_count , const transport_s* transport)
+{
+    //Set up all the threads, scoreboard, transport connections etc.
+    server_init(thread_count, client_count, transport);
+
+    while(1){
+        //send out a broadcast message.
+
+        //wait for all the responses
+
+        //evaluate
+    }
+
+}
+
