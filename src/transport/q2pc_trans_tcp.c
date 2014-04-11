@@ -310,18 +310,20 @@ static int beg_write_all(struct q2pc_trans_s* this, char** data_o, i64* len_o)
     return 0;
 }
 
-static int end_write_all(struct q2pc_trans_s* this, i64 len)
+static int end_write_all(struct q2pc_trans_s* this, i64 msg_len)
 {
+
+    ch_log_debug3("Sending %li bytes\n", msg_len);
     q2pc_tcp_priv* priv = (q2pc_tcp_priv*)this->priv;
     if(!priv->connections){
         return -1;
     }
-    if(len > priv->write_all_buffer_size){
+    if(msg_len > priv->write_all_buffer_size){
         ch_log_fatal("Error: Wrote more data than the buffer could handle. Memory corruption is likely\n ");
     }
 
 
-    for(int i = 0; i < priv->connections->size; i++){
+    for(int i = 0; i < priv->connections->count; i++){
         q2pc_trans_conn* conn = priv->connections->off(priv->connections,i);
         char* data = NULL;
         i64 len = 0;
@@ -330,10 +332,10 @@ static int end_write_all(struct q2pc_trans_s* this, i64 len)
             ch_log_fatal("Could not begin write on connection %i\n", i);
         }
 
-        memcpy(data,priv->write_all_buffer, len);
+        memcpy(data,priv->write_all_buffer, msg_len);
 
         //Commit it
-        conn->end_write(conn, len);
+        conn->end_write(conn, msg_len);
 
     }
 

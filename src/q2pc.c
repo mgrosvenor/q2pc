@@ -10,10 +10,13 @@ USE_CH_LOGGER(CH_LOG_LVL_INFO,true,ch_log_tostderr,NULL);
 USE_CH_OPTIONS;
 
 static struct {
-	//General Options
+	//Server Options
 	i64 server;
-	char* client;
 	i64 threads;
+
+	//Client Options
+	char* client;
+	i64 client_id;
 
 	//Transports
 	bool trans_tcp_ln;
@@ -41,10 +44,13 @@ static struct {
 
 int main(int argc, char** argv)
 {
-	//General options
+	//Server options
     ch_opt_addii(CH_OPTION_OPTIONAL,'s',"server","Put q2pc in server mode, specify the number of clients", &options.server, 0);
     ch_opt_addii(CH_OPTION_OPTIONAL,'T',"threads","The number of threads to use", &options.threads, 1);
+
+    //Client options
     ch_opt_addsi(CH_OPTION_OPTIONAL,'c',"client","Put q2pc in client mode, specify server address in x.x.x.x format", &options.client, NULL);
+    ch_opt_addii(CH_OPTION_OPTIONAL,'C',"id","The client ID to use for this client (must be >0)", &options.client_id, -1);
 
     //Transports
     ch_opt_addbi(CH_OPTION_FLAG,    'u',"udp-ln","Use Linux based UDP transport [default]", &options.trans_udp_ln, false);
@@ -154,13 +160,16 @@ int main(int argc, char** argv)
     }
 
 
+    if(options.client && options.client_id < 0){
+        ch_log_fatal("Q2PC: Configuration error, in client mode, you must specify a client id >0.\n");
+    }
 
 
     /********************************************************/
     //real work begins here:
     /********************************************************/
     if(options.client){
-        run_client(&transport);
+        run_client(&transport, options.client_id);
     }
     else{
         run_server(options.threads, options.server,&transport);

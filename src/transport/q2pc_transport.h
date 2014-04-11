@@ -43,7 +43,7 @@ typedef struct q2pc_trans_s {
 
     //Send a broadcast message to all transport connections
     int (*beg_write_all)(struct q2pc_trans_s* this, char** data, i64* len_o);
-    int (*end_write_all)(struct q2pc_trans_s* this, i64 len_o);
+    int (*end_write_all)(struct q2pc_trans_s* this, i64 len);
 
     void (*delete)(struct q2pc_trans_s* this);
 

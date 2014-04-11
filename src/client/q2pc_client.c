@@ -6,6 +6,7 @@
  */
 #include <signal.h>
 #include <stdlib.h>
+#include <sys/time.h>
 
 #include "q2pc_client.h"
 #include "../../deps/chaste/chaste.h"
@@ -16,7 +17,7 @@
 //Local globals
 static q2pc_trans* trans    = NULL;
 static q2pc_trans_conn conn = {0};
-
+static i64 client_num       = -1;
 
 static void term(int signo)
 {
@@ -24,7 +25,7 @@ static void term(int signo)
     (void)signo;
 
     if(trans){ trans->delete(trans); }
-    if(conn.priv) { conn.delete(&conn); }
+    //if(conn.priv) { conn.delete(&conn); }
 
     ch_log_info("Terminating... Done.\n");
     exit(0);
@@ -48,22 +49,45 @@ static void init(const transport_s* transport)
 typedef enum { q2pc_pahse1, q2pc_phase2 } q2pc_phase_t;
 
 
-static q2pc_msg* get_messge()
+static q2pc_msg* get_messge(i64 wait_usecs)
 {
     char* data = NULL;
     i64 len = 0;
     i64 result = Q2PC_EAGAIN;
 
-    while(result != Q2PC_ENONE){
-        i64 result = conn.beg_read(&conn,&data, &len);
-        if(result != Q2PC_ENONE){
-            conn.end_read(&conn);
-            continue;
+    struct timeval ts_start = {0};
+    struct timeval ts_now = {0};
+    i64 ts_start_us = 0;
+    i64 ts_now_us = 0;
+
+    gettimeofday(&ts_start, NULL);
+    ts_start_us = ts_start.tv_sec * 1000 * 1000 + ts_start.tv_usec;
+
+
+    while(result == Q2PC_EAGAIN){
+        gettimeofday(&ts_now, NULL);
+        ts_now_us = ts_now.tv_sec * 1000 * 1000 + ts_now.tv_usec;
+        if(ts_now_us > ts_start_us + wait_usecs){
+            ch_log_info("Timed out waiting for server response\n");
+            return NULL;
         }
 
-        q2pc_msg* msg = (q2pc_msg*)data;
-        conn.end_read(&conn);
-        return msg;
+        i64 result = conn.beg_read(&conn,&data, &len);
+
+        if(result == Q2PC_ENONE){
+            q2pc_msg* msg = (q2pc_msg*)data;
+            conn.end_read(&conn);
+            return msg;
+        }
+
+        if(result == Q2PC_EFIN){
+            ch_log_info("Server quit\n");
+            conn.end_read(&conn);
+            return NULL;
+        }
+
+
+
     }
 
     //Unreachable
@@ -85,7 +109,7 @@ static void send_response(q2pc_msg_type_t msg_type)
 
     q2pc_msg* msg = (q2pc_msg*)data;
     msg->type       = msg_type;
-    msg->src_hostid = ~0LL;
+    msg->src_hostid = client_num;
 
     //Commit it
     conn.end_write(&conn, sizeof(q2pc_msg));
@@ -96,7 +120,11 @@ static void send_response(q2pc_msg_type_t msg_type)
 u64 vote_count = 0;
 static int do_phase1()
 {
-    q2pc_msg* msg = get_messge();
+    q2pc_msg* msg = get_messge(500 * 1000);
+    if(!msg){
+        ch_log_error("Server has terminated. Cannot continue\n");
+        term(0);
+    }
 
     //XXX HACK: 1 in 5 votes will fail
     u64 vote_yes = (vote_count % 5);
@@ -104,18 +132,21 @@ static int do_phase1()
 
     switch(msg->type){
         case q2pc_request_msg:
-
+            ch_log_debug2("Q2PC Client: [M]<-- request\n");
 
             if(vote_yes){
+                ch_log_debug2("Q2PC Client: [M]--> vote yes\n");
                 send_response(q2pc_vote_yes_msg);
                 break;
             }
             else{
+                ch_log_debug2("Q2PC Client: [M]--> vote no\n");
                 send_response(q2pc_vote_no_msg);
                 break;
             }
         default:
-            ch_log_fatal("Protocol failure, unexpected message type\n");
+            ch_log_debug2("Q2PC Client: [M]<-- Unknown message (%i)\n", msg->type);
+            ch_log_fatal("Protocol failure, in phase 1 unexpected message type %i\n", msg->type);
     }
 
     vote_count++;
@@ -125,7 +156,13 @@ static int do_phase1()
 static int do_phase2()
 {
     int result = 0;
-    q2pc_msg* msg = get_messge();
+    q2pc_msg* msg = get_messge(5000 * 1000);
+    if(!msg){
+        ch_log_error("Server has terminated. Cannot continue\n");
+        term(0);
+    }
+
+
     switch(msg->type){
         case q2pc_commit_msg:
             ch_log_info("Message committed\n");
@@ -138,23 +175,21 @@ static int do_phase2()
             result = 1;
             break;
         default:
-            ch_log_fatal("Protocol failure, unexpected message type\n");
+            ch_log_fatal("Protocol failure, in phase 2 unexpected message type %i\n", msg->type);
     }
 
     return result;
 }
 
 
-void run_client(const transport_s* transport)
+void run_client(const transport_s* transport, i64 client_id)
 {
+    client_num = client_id;
     init(transport);
 
 
     while(1){
-        if(do_phase1()){
-            continue;
-        }
-
+        do_phase1();
         do_phase2();
     }
 

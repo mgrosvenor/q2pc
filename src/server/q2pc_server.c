@@ -21,6 +21,7 @@ typedef struct{
     i64 lo;
     i64 hi;
     i64 count;
+    i64 thread_id;
 } thread_params_t;
 
 void* run_thread( void* p);
@@ -34,12 +35,9 @@ static i64 real_thread_count = 0;
 static i64* votes_scoreboard = NULL;
 static q2pc_trans* trans;
 
-//Signal handler to terminate early
-void term(int signo)
-{
-    ch_log_info("Terminating...\n");
-    (void)signo;
 
+void cleanup()
+{
     stop_signal = true;
     __sync_synchronize(); //Full fence
 
@@ -52,6 +50,16 @@ void term(int signo)
     if(trans){
         trans->delete(trans);
     }
+
+}
+
+
+//Signal handler to terminate early
+void term(int signo)
+{
+    ch_log_info("Terminating...\n");
+    (void)signo;
+    cleanup();
 
     ch_log_info("Terminating... Done.\n");
     exit(0);
@@ -116,9 +124,10 @@ void server_init(const i64 thread_count, const i64 client_count , const transpor
         if(!params){
             ch_log_fatal("Cannot allocate thread parameters\n");
         }
-        params->lo      = lo;
-        params->hi      = hi;
-        params->count   = client_count;
+        params->lo          = lo;
+        params->hi          = hi;
+        params->count       = client_count;
+        params->thread_id   = i;
 
         pthread_create(threads + i, NULL, run_thread, (void*)params);
 
@@ -133,12 +142,13 @@ void server_init(const i64 thread_count, const i64 client_count , const transpor
 void* run_thread( void* p)
 {
     thread_params_t* params = (thread_params_t*)p;
-    i64 lo      = params->lo;
-    i64 hi      = params->hi;
-    i64 count   = params->count;
+    i64 lo          = params->lo;
+    i64 hi          = params->hi;
+    i64 count       = params->count;
+    i64 thread_id   = params->thread_id;
     free(params);
 
-    ch_log_debug3("Starting worker thread\n");
+    ch_log_debug3("Running worker thread\n");
     while(!stop_signal){
 
         //Busy loop if we're told to stop processing for a moment
@@ -164,8 +174,13 @@ void* run_thread( void* p)
             }
 
             votes_scoreboard[msg->src_hostid] = msg->type;
-            //ch_log_debug3("[%i] voted %s\n", msg->src_hostid, msg->vote ? "yes" : "no");
-
+            switch(msg->type){
+                case q2pc_vote_yes_msg: ch_log_debug2("Q2PC Server: [%i]<-- vote yes from (%li)\n", thread_id, msg->src_hostid); break;
+                case q2pc_vote_no_msg:  ch_log_debug2("Q2PC Server: [%i]<-- vote no  from (%li)\n", thread_id, msg->src_hostid); break;
+                case q2pc_ack_msg:      ch_log_debug2("Q2PC Server: [%i]<-- ack      from (%li)\n", thread_id, msg->src_hostid); break;
+                default:
+                    ch_log_warn("Q2PC Server: [%i] <-- Unknown message (%i)   from (%li)\n",thread_id, msg->type, msg->src_hostid );
+            }
             con->end_read(con);
         }
     }
@@ -184,6 +199,7 @@ void* run_thread( void* p)
 
 void send_request(q2pc_msg_type_t msg_type)
 {
+    ch_log_debug3("Sending request of type %i...\n", msg_type);
     char* data;
     i64 len;
     if(trans->beg_write_all(trans,&data,&len)){
@@ -200,7 +216,7 @@ void send_request(q2pc_msg_type_t msg_type)
 
     //Commit it
     trans->end_write_all(trans, sizeof(q2pc_msg));
-
+    ch_log_debug3("Sending request of type %i...done\n", msg_type);
 }
 
 
@@ -216,17 +232,18 @@ q2pc_commit_status_t do_phase1(i64 client_count)
     }
 
     //send out a broadcast message to all servers
+    ch_log_debug2("Q2PC Server: [M]--> request\n");
     send_request(q2pc_request_msg);
 
     //wait for all the responses
-    usleep(200000);
+    usleep(500 * 1000);
 
     //Stop all the receiver threads
     dopause_all();
     for(int i = 0; i < client_count; i++){
         __builtin_prefetch(votes_scoreboard + i + 1);
         if(votes_scoreboard[i] == q2pc_lost_msg){
-            ch_log_warn("client %li message lost, cluster failed\n",i);
+            ch_log_warn("Q2PC: phase 1 - client %li message lost, cluster failed\n",i);
             return q2pc_cluster_fail;
         }
         if(votes_scoreboard[i] == q2pc_vote_no_msg){
@@ -254,22 +271,29 @@ i64 do_phase2(q2pc_commit_status_t status, i64 client_count)
     }
 
     switch(status){
-        case q2pc_request_success:  send_request(q2pc_commit_msg); break;
-        case q2pc_request_fail:     send_request(q2pc_cancel_msg); break;
-        case q2pc_cluster_fail:     return q2pc_cluster_fail;
+        case q2pc_request_success:
+            ch_log_debug2("Q2PC Server: [M]--> commit\n");
+            send_request(q2pc_commit_msg);
+            break;
+        case q2pc_request_fail:
+            ch_log_debug2("Q2PC Server: [M]--> cancel\n");
+            send_request(q2pc_cancel_msg);
+            break;
+        case q2pc_cluster_fail:
+            return q2pc_cluster_fail;
         default:
             ch_log_fatal("Internal error: unexpected result from phase 1\n");
     }
 
     //wait for all the responses
-    usleep(200000);
+    usleep(500 * 1000);
 
     //Stop all the receiver threads
     dopause_all();
     for(int i = 0; i < client_count; i++){
         __builtin_prefetch(votes_scoreboard + i + 1);
         if(votes_scoreboard[i] == q2pc_lost_msg){
-            ch_log_warn("client %li message lost, cluster failed\n",i);
+            ch_log_warn("Q2PC: phase 2 - client %li message lost, cluster failed\n",i);
             return q2pc_cluster_fail;
         }
         if(votes_scoreboard[i] != q2pc_ack_msg){
@@ -302,7 +326,7 @@ void run_server(const i64 thread_count, const i64 client_count , const transport
         status = do_phase2(status,client_count);
 
         switch(status){
-            case q2pc_cluster_fail:     ch_log_fatal("Cluster failed\n"); break;
+            case q2pc_cluster_fail:     cleanup(); ch_log_fatal("Cluster failed\n"); break;
             case q2pc_commit_success:   ch_log_info("Commit success!\n"); break;
             case q2pc_commit_fail:      ch_log_info("Commit fail!\n"); break;
             default:
