@@ -415,7 +415,7 @@ void run_server(const i64 thread_count, const i64 client_count , const transport
     gettimeofday(&ts_start, NULL);
     ts_start_us = ts_start.tv_sec * 1000 * 1000 + ts_start.tv_usec;
 
-    const i64 report_int = 1000;
+    const i64 report_int = 10000;
     ch_log_info("Running...\n");
     for(i64 requests = 0; ; requests++){
 
