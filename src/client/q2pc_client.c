@@ -65,14 +65,7 @@ static q2pc_msg* get_messge(i64 wait_usecs)
 
 
     while(result == Q2PC_EAGAIN){
-        gettimeofday(&ts_now, NULL);
-        ts_now_us = ts_now.tv_sec * 1000 * 1000 + ts_now.tv_usec;
-        if(ts_now_us > ts_start_us + wait_usecs){
-            ch_log_info("Timed out waiting for server response\n");
-            return NULL;
-        }
-
-        i64 result = conn.beg_read(&conn,&data, &len);
+        result = conn.beg_read(&conn,&data, &len);
 
         if(result == Q2PC_ENONE){
             q2pc_msg* msg = (q2pc_msg*)data;
@@ -81,13 +74,19 @@ static q2pc_msg* get_messge(i64 wait_usecs)
         }
 
         if(result == Q2PC_EFIN){
-            ch_log_info("Server quit\n");
+            ch_log_warn("Server quit\n");
             conn.end_read(&conn);
             return NULL;
         }
 
-
-
+        if(wait_usecs >= 0){
+            gettimeofday(&ts_now, NULL);
+            ts_now_us = ts_now.tv_sec * 1000 * 1000 + ts_now.tv_usec;
+            if(ts_now_us > ts_start_us + wait_usecs){
+                ch_log_warn("Timed out waiting for server response\n");
+                return NULL;
+            }
+        }
     }
 
     //Unreachable
@@ -118,9 +117,10 @@ static void send_response(q2pc_msg_type_t msg_type)
 
 
 u64 vote_count = 0;
-static int do_phase1()
+static int do_phase1(i64 timeout)
 {
-    q2pc_msg* msg = get_messge(500 * 1000);
+    q2pc_msg* msg = get_messge(timeout);
+    ch_log_debug1("Phase 1 --> Msg %p\n", msg);
     if(!msg){
         ch_log_error("Server has terminated. Cannot continue\n");
         term(0);
@@ -153,10 +153,10 @@ static int do_phase1()
     return !vote_yes;
 }
 
-static int do_phase2()
+static int do_phase2(i64 timeout)
 {
     int result = 0;
-    q2pc_msg* msg = get_messge(5000 * 1000);
+    q2pc_msg* msg = get_messge(timeout);
     if(!msg){
         ch_log_error("Server has terminated. Cannot continue\n");
         term(0);
@@ -165,18 +165,21 @@ static int do_phase2()
 
     switch(msg->type){
         case q2pc_commit_msg:
-            ch_log_info("Message committed\n");
+            ch_log_debug2("Q2PC Client: [M]<-- commit\n");
             send_response(q2pc_ack_msg);
+            ch_log_debug2("Q2PC Client: [M]--> ack\n");
             result = 0;
             break;
-        case q2pc_cancel_msg: ; break;
-            ch_log_info("Message canceled\n");
+        case q2pc_cancel_msg:
+            ch_log_debug2("Q2PC Client: [M]<-- cancel\n");
             send_response(q2pc_ack_msg);
+            ch_log_debug2("Q2PC Client: [M]--> ack\n");
             result = 1;
             break;
         default:
             ch_log_fatal("Protocol failure, in phase 2 unexpected message type %i\n", msg->type);
     }
+
 
     return result;
 }
@@ -189,8 +192,8 @@ void run_client(const transport_s* transport, i64 client_id)
 
 
     while(1){
-        do_phase1();
-        do_phase2();
+        do_phase1(-1);
+        do_phase2(500*1000);
     }
 
 }

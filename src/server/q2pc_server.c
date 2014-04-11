@@ -236,7 +236,7 @@ q2pc_commit_status_t do_phase1(i64 client_count)
     send_request(q2pc_request_msg);
 
     //wait for all the responses
-    usleep(500 * 1000);
+    usleep(200 * 1000);
 
     //Stop all the receiver threads
     dopause_all();
@@ -286,7 +286,7 @@ i64 do_phase2(q2pc_commit_status_t status, i64 client_count)
     }
 
     //wait for all the responses
-    usleep(500 * 1000);
+    usleep(200 * 1000);
 
     //Stop all the receiver threads
     dopause_all();

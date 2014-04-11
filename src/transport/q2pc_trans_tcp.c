@@ -122,7 +122,7 @@ static int conn_beg_delimit(struct q2pc_trans_conn_s* this, char** data_o, i64* 
     }
 
 
-    ch_log_debug2("Read another %lubytes to %p\n", len, data);
+    ch_log_debug2("Read another %lu bytes to %p\n", len, data);
 
     while(len > priv->delim_buffer_size - priv->delim_buffer_used){
         ch_log_debug2("Growing working buffer from %lu to %lu\n", priv->delim_buffer_size, priv->delim_buffer_size * 2 );
