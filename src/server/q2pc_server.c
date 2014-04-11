@@ -412,7 +412,7 @@ void run_server(const i64 thread_count, const i64 client_count , const transport
     gettimeofday(&ts_start, NULL);
     ts_start_us = ts_start.tv_sec * 1000 * 1000 + ts_start.tv_usec;
 
-    const i64 report_int = 100;
+    const i64 report_int = 1000;
     ch_log_info("Running...\n");
     for(i64 requests = 0; ; requests++){
 
@@ -431,8 +431,8 @@ void run_server(const i64 thread_count, const i64 client_count , const transport
 
 
         q2pc_commit_status_t status;
-        status = do_phase1(client_count, 2000*1000);
-        status = do_phase2(status,client_count, 2000*1000);
+        status = do_phase1(client_count, 20 * 1000*1000);
+        status = do_phase2(status,client_count, 20 * 1000 * 1000);
 
         switch(status){
             case q2pc_cluster_fail:     cleanup(); ch_log_fatal("Cluster failed\n"); break;
