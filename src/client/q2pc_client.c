@@ -193,10 +193,10 @@ void run_client(const transport_s* transport, i64 client_id)
     while(1){
         do_phase1(-1);
         if(do_phase2(500*1000)){
-            ch_log_info("Commit aborted\n");
+            ch_log_debug1("Commit aborted\n");
         }
         else{
-            ch_log_info("Commit succeed\n");
+            ch_log_debug1("Commit succeed\n");
         }
     }
 
