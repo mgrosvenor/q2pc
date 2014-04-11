@@ -111,8 +111,8 @@ void server_init(const i64 thread_count, const i64 client_count , const transpor
 
 
     //Calculate the connection to thread mappings
-    i64 cons_per_thread = MAX(client_count / thread_count, 1);
-    real_thread_count  = MIN(thread_count, client_count);
+    i64 cons_per_thread = MAX( (client_count + thread_count -1) / thread_count, 1);
+    real_thread_count   = MIN(thread_count, client_count);
     i64 lo = 0;
     i64 hi = lo + cons_per_thread;
 
@@ -126,7 +126,7 @@ void server_init(const i64 thread_count, const i64 client_count , const transpor
     //Fire up the threads
     threads = (pthread_t*)calloc(real_thread_count, sizeof(pthread_t));
     for(int i = 0; i < real_thread_count; i++){
-        ch_log_debug2("Starting thread %i with connections %li\n", i, lo, hi -1);
+        ch_log_debug2("Starting thread %i with connections [%li,%li]\n", i, lo, hi -1);
 
         //Do this to avoid synchronisation errors
         thread_params_t* params = (thread_params_t*)calloc(1,sizeof(thread_params_t));
@@ -140,7 +140,7 @@ void server_init(const i64 thread_count, const i64 client_count , const transpor
 
         pthread_create(threads + i, NULL, run_thread, (void*)params);
 
-        lo++;
+        lo = hi;
         hi = lo + cons_per_thread;
         hi = MIN(cons->size,hi); //Clip so we don't go over the bounds
     }
