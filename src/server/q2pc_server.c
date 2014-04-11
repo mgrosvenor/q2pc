@@ -147,6 +147,8 @@ void server_init(const i64 thread_count, const i64 client_count , const transpor
 
 }
 
+#define BARRIER()  __asm__ volatile("" ::: "memory")
+
 
 void* run_thread( void* p)
 {
@@ -187,10 +189,6 @@ void* run_thread( void* p)
                 continue;
             }
 
-
-            votes_count[thread_id]++;
-            ch_log_debug2("Q2PC Server: [%li] Vote count=%li\n", thread_id,votes_count[thread_id]);
-
             votes_scoreboard[msg->src_hostid] = msg->type;
             switch(msg->type){
                 case q2pc_vote_yes_msg: ch_log_debug2("Q2PC Server: [%i]<-- vote yes from (%li)\n", thread_id, msg->src_hostid); break;
@@ -200,6 +198,11 @@ void* run_thread( void* p)
                     ch_log_warn("Q2PC Server: [%i] <-- Unknown message (%i)   from (%li)\n",thread_id, msg->type, msg->src_hostid );
             }
             con->end_read(con);
+            BARRIER(); //Make sure there is no memory reordering here
+
+            votes_count[thread_id]++;
+            ch_log_debug2("Q2PC Server: [%li] Vote count=%li\n", thread_id,votes_count[thread_id]);
+
         }
     }
 
