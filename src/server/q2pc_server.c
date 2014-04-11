@@ -96,7 +96,7 @@ void server_init(const i64 thread_count, const i64 client_count , const transpor
     signal(SIGINT, term);
 
     //Set up and init the voting scoreboard
-    votes_scoreboard = aligned_alloc(sizeof(i64), sizeof(i64) * client_count);
+    votes_scoreboard = (volatile i64*)aligned_alloc(sizeof(i64), sizeof(i64) * client_count);
     if(!votes_scoreboard){
         ch_log_fatal("Could not allocate memory for votes scoreboard\n");
     }
@@ -116,7 +116,7 @@ void server_init(const i64 thread_count, const i64 client_count , const transpor
     i64 lo = 0;
     i64 hi = lo + cons_per_thread;
 
-    votes_count = aligned_alloc(sizeof(i64), sizeof(i64) * real_thread_count);
+    votes_count = (volatile i64*)aligned_alloc(sizeof(i64), sizeof(i64) * real_thread_count);
     if(!votes_count){
         ch_log_fatal("Could not allocate memory for votes counter\n");
     }
