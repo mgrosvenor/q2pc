@@ -273,7 +273,8 @@ static void conn_delete(struct q2pc_trans_conn_s* this)
             free(this->priv);
         }
 
-        free(this);
+        //XXX HACK!
+        //free(this);
     }
 }
 

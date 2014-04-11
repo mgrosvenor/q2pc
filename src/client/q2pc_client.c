@@ -18,6 +18,7 @@
 static q2pc_trans* trans    = NULL;
 static q2pc_trans_conn conn = {0};
 static i64 client_num       = -1;
+static u64 vote_count       = 0;
 
 static void term(int signo)
 {
@@ -116,7 +117,6 @@ static void send_response(q2pc_msg_type_t msg_type)
 }
 
 
-u64 vote_count = 0;
 static int do_phase1(i64 timeout)
 {
     q2pc_msg* msg = get_messge(timeout);
@@ -188,7 +188,7 @@ void run_client(const transport_s* transport, i64 client_id)
 {
     client_num = client_id;
     init(transport);
-
+    vote_count = client_id; //XXX HACK
 
     while(1){
         do_phase1(-1);
