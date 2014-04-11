@@ -17,8 +17,6 @@
 #include "../protocol/q2pc_protocol.h"
 
 
-static CH_ARRAY(TRANS_CONN)* cons = NULL;
-
 typedef struct{
     i64 lo;
     i64 hi;
@@ -28,12 +26,13 @@ typedef struct{
 void* run_thread( void* p);
 
 //Server wide global
+static CH_ARRAY(TRANS_CONN)* cons = NULL;
 static volatile bool stop_signal = false;
 static volatile bool pause_signal = false;
 static pthread_t* threads = NULL;
 static i64 real_thread_count = 0;
 static i64* votes_scoreboard = NULL;
-static q2pc_trans_server* trans;
+static q2pc_trans* trans;
 
 //Signal handler to terminate early
 void term(int signo)
@@ -63,6 +62,19 @@ void term(int signo)
 void dopause_all(){ pause_signal = true;  __sync_synchronize(); }
 void unpause_all(){ pause_signal = false; __sync_synchronize(); }
 
+//Wait for all clients to connect
+void do_connectall(i64 client_count)
+{
+    cons = CH_ARRAY_NEW(TRANS_CONN,client_count,NULL);
+    if(!cons){ ch_log_fatal("Cannot allocate connections array\n"); }
+
+    for(int i = 0; i < client_count; i++){
+        trans->connect(trans, cons->off(cons,i));
+    }
+
+}
+
+
 
 void server_init(const i64 thread_count, const i64 client_count , const transport_s* transport)
 {
@@ -83,8 +95,8 @@ void server_init(const i64 thread_count, const i64 client_count , const transpor
 
     //Set up all the connections
     ch_log_debug1("Waiting for clients to connect...\n");
-    trans = server_factory(transport,client_count);
-    cons = trans->connectall(trans, client_count);
+    trans = trans_factory(transport);
+    do_connectall(client_count);
     ch_log_debug1("Waiting for clients to connect... Done.\n");
 
 
@@ -244,6 +256,7 @@ i64 do_phase2(q2pc_commit_status_t status, i64 client_count)
     switch(status){
         case q2pc_request_success:  send_request(q2pc_commit_msg); break;
         case q2pc_request_fail:     send_request(q2pc_cancel_msg); break;
+        case q2pc_cluster_fail:     return q2pc_cluster_fail;
         default:
             ch_log_fatal("Internal error: unexpected result from phase 1\n");
     }

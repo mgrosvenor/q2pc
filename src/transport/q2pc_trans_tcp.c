@@ -12,7 +12,7 @@
 #include <errno.h>
 #include <fcntl.h>
 
-#include "q2pc_trans_server_tcp.h"
+#include "q2pc_trans_tcp.h"
 #include "conn_vector.h"
 #include "../errors/errors.h"
 #include "../protocol/q2pc_protocol.h"
@@ -38,7 +38,7 @@ typedef struct {
     i64   delim_result_len;
 
 
-} q2pc_server_tcp_conn_priv;
+} q2pc_tcp_conn_priv;
 
 
 i64 delimit(char* buff, i64 len)
@@ -56,7 +56,7 @@ i64 delimit(char* buff, i64 len)
 
 static int conn_beg_read(struct q2pc_trans_conn_s* this, char** data_o, i64* len_o)
 {
-    q2pc_server_tcp_conn_priv* priv = (q2pc_server_tcp_conn_priv*)this->priv;
+    q2pc_tcp_conn_priv* priv = (q2pc_tcp_conn_priv*)this->priv;
     if( priv->read_buffer && priv->read_buffer_used){
         return Q2PC_ENONE;
     }
@@ -84,14 +84,14 @@ static int conn_beg_read(struct q2pc_trans_conn_s* this, char** data_o, i64* len
 
 static int conn_end_read(struct q2pc_trans_conn_s* this)
 {
-    q2pc_server_tcp_conn_priv* priv = (q2pc_server_tcp_conn_priv*)this->priv;
+    q2pc_tcp_conn_priv* priv = (q2pc_tcp_conn_priv*)this->priv;
     priv->read_buffer_used = 0;
     return 0;
 }
 
 static int conn_beg_delimit(struct q2pc_trans_conn_s* this, char** data_o, i64* len_o)
 {
-    q2pc_server_tcp_conn_priv* priv = (q2pc_server_tcp_conn_priv*)this->priv;
+    q2pc_tcp_conn_priv* priv = (q2pc_tcp_conn_priv*)this->priv;
 
     if(priv->delim_result && priv->delim_result_len){
         *data_o  = priv->delim_result;
@@ -166,7 +166,7 @@ static int conn_beg_delimit(struct q2pc_trans_conn_s* this, char** data_o, i64* 
 // priv->delimit_buffer size is smaller.
 static int conn_end_delimit(struct q2pc_trans_conn_s* this)
 {
-    q2pc_server_tcp_conn_priv* priv = this->priv;
+    q2pc_tcp_conn_priv* priv = this->priv;
     if(!priv->delim_result){
         return 0;
     }
@@ -236,7 +236,7 @@ static int conn_end_delimit(struct q2pc_trans_conn_s* this)
 
 static int conn_beg_write(struct q2pc_trans_conn_s* this, char** data_o, i64* len_o)
 {
-    q2pc_server_tcp_conn_priv* priv = (q2pc_server_tcp_conn_priv*)this->priv;
+    q2pc_tcp_conn_priv* priv = (q2pc_tcp_conn_priv*)this->priv;
     *data_o = priv->write_buffer;
     *len_o  = priv->write_buffer_size;
     return 0;
@@ -245,7 +245,7 @@ static int conn_beg_write(struct q2pc_trans_conn_s* this, char** data_o, i64* le
 
 static int conn_end_write(struct q2pc_trans_conn_s* this, i64 len)
 {
-    q2pc_server_tcp_conn_priv* priv = (q2pc_server_tcp_conn_priv*)this->priv;
+    q2pc_tcp_conn_priv* priv = (q2pc_tcp_conn_priv*)this->priv;
     char* data = priv->write_buffer;
 
     if(len > priv->write_buffer_size){
@@ -267,7 +267,7 @@ static void conn_delete(struct q2pc_trans_conn_s* this)
 {
     if(this){
         if(this->priv){
-            q2pc_server_tcp_conn_priv* priv = (q2pc_server_tcp_conn_priv*)this->priv;
+            q2pc_tcp_conn_priv* priv = (q2pc_tcp_conn_priv*)this->priv;
             if(priv->read_buffer){ free(priv->read_buffer); }
             if(priv->delim_buffer){ free(priv->delim_buffer); }
             free(this->priv);
@@ -288,17 +288,18 @@ typedef struct {
     i64   write_all_buffer_used;
     i64   write_all_buffer_size;
 
+    transport_s transport;
 
-    CH_ARRAY(TRANS_CONN)* connections;
+    CH_VECTOR(TRANS_CONN)* connections;
 
-} q2pc_server_tcp_server_priv;
-
-
+} q2pc_tcp_priv;
 
 
-static int beg_write_all(struct q2pc_trans_server_s* this, char** data_o, i64* len_o)
+
+
+static int beg_write_all(struct q2pc_trans_s* this, char** data_o, i64* len_o)
 {
-    q2pc_server_tcp_server_priv* priv = (q2pc_server_tcp_server_priv*)this->priv;
+    q2pc_tcp_priv* priv = (q2pc_tcp_priv*)this->priv;
     if(!priv->connections){
         return -1;
     }
@@ -309,9 +310,9 @@ static int beg_write_all(struct q2pc_trans_server_s* this, char** data_o, i64* l
     return 0;
 }
 
-static int end_write_all(struct q2pc_trans_server_s* this, i64 len)
+static int end_write_all(struct q2pc_trans_s* this, i64 len)
 {
-    q2pc_server_tcp_server_priv* priv = (q2pc_server_tcp_server_priv*)this->priv;
+    q2pc_tcp_priv* priv = (q2pc_tcp_priv*)this->priv;
     if(!priv->connections){
         return -1;
     }
@@ -340,77 +341,85 @@ static int end_write_all(struct q2pc_trans_server_s* this, i64 len)
 
 }
 
-
-//Wait for all clients to connect
-static CH_ARRAY(TRANS_CONN)* doconnectall(struct q2pc_trans_server_s* this, i64 client_count )
+static q2pc_tcp_conn_priv* new_conn_priv()
 {
-    q2pc_server_tcp_server_priv* priv = (q2pc_server_tcp_server_priv*)this->priv;
-
-    CH_ARRAY(TRANS_CONN)* result = CH_ARRAY_NEW(TRANS_CONN,client_count,NULL);
-
-    for(int i = 0; i < client_count; i++){
-        int accept_fd = accept(priv->fd, NULL, NULL);
-        if( accept_fd < 0 ){
-            //            if(errno == EAGAIN || errno == EWOULDBLOCK){
-            //                continue; //Reading would have blocked, we don't want this
-            //            }
-
-            ch_log_fatal("TCP accept failed - %s\n",strerror(errno));
-        }
-
-        q2pc_server_tcp_conn_priv* new_priv = calloc(1,sizeof(q2pc_server_tcp_conn_priv));
-        if(!new_priv){
-            ch_log_fatal("Malloc failed!\n");
-        }
-
-        #define BUFF_SIZE (4096 * 1024) //A 4MB buffer. Just because
-        void* read_buff = calloc(2,BUFF_SIZE);
-        if(!read_buff){
-            ch_log_fatal("Malloc failed!\n");
-        }
-        new_priv->read_buffer = read_buff;
-        new_priv->read_buffer_size = BUFF_SIZE;
-
-        void* write_buff = (char*)read_buff + BUFF_SIZE;
-        new_priv->write_buffer = write_buff;
-        new_priv->write_buffer_size = BUFF_SIZE;
-
-
-        void* working_buff = calloc(1,BUFF_SIZE);
-        if(!working_buff){
-            ch_log_fatal("Malloc failed!\n");
-        }
-        new_priv->delim_buffer = working_buff;
-        new_priv->delim_buffer_size = BUFF_SIZE;
-
-        new_priv->fd = accept_fd;
-        int flags = 0;
-        flags |= O_NONBLOCK;
-        if( fcntl(new_priv->fd, F_SETFL, flags) == -1){
-            ch_log_fatal("Could not set non-blocking on fd=%i: %s\n",new_priv,strerror(errno));
-        }
-
-        q2pc_trans_conn* conn = result->off(result,i);
-
-        conn->priv      = new_priv;
-        conn->beg_read  = conn_beg_delimit;
-        conn->end_read  = conn_end_delimit;
-        conn->beg_write = conn_beg_write;
-        conn->end_write = conn_end_write;
-        conn->delete    = conn_delete;
-
+    q2pc_tcp_conn_priv* new_priv = calloc(1,sizeof(q2pc_tcp_conn_priv));
+    if(!new_priv){
+        ch_log_fatal("Malloc failed!\n");
     }
 
-    //Keep a local copy for doing broadcast
-    priv->connections = result;
+    #define BUFF_SIZE (4096 * 1024) //A 4MB buffer. Just because
+    void* read_buff = calloc(2,BUFF_SIZE);
+    if(!read_buff){
+        ch_log_fatal("Malloc failed!\n");
+    }
+    new_priv->read_buffer = read_buff;
+    new_priv->read_buffer_size = BUFF_SIZE;
 
-    return result;
+    void* write_buff = (char*)read_buff + BUFF_SIZE;
+    new_priv->write_buffer = write_buff;
+    new_priv->write_buffer_size = BUFF_SIZE;
+
+
+    void* working_buff = calloc(1,BUFF_SIZE);
+    if(!working_buff){
+        ch_log_fatal("Malloc failed!\n");
+    }
+    new_priv->delim_buffer = working_buff;
+    new_priv->delim_buffer_size = BUFF_SIZE;
+
+    return new_priv;
+
 }
 
-static void serv_delete(struct q2pc_trans_server_s* this)
+
+
+//Wait for all clients to connect
+static int doconnect(struct q2pc_trans_s* this, q2pc_trans_conn* conn)
+{
+    q2pc_tcp_priv* priv = (q2pc_tcp_priv*)this->priv;
+    int fd = -1;
+    if(priv->transport.server){
+        fd = accept(priv->fd, NULL, NULL);
+        if( fd < 0 ){
+            ch_log_fatal("TCP accept failed - %s\n",strerror(errno));
+        }
+    }
+    else{
+        fd = priv->fd;
+    }
+
+    q2pc_tcp_conn_priv* new_priv = new_conn_priv();
+
+    new_priv->fd = fd;
+    int flags = 0;
+    flags |= O_NONBLOCK;
+    if( fcntl(new_priv->fd, F_SETFL, flags) == -1){
+        ch_log_fatal("Could not set non-blocking on fd=%i: %s\n",new_priv,strerror(errno));
+    }
+
+    conn->priv      = new_priv;
+    conn->beg_read  = conn_beg_delimit;
+    conn->end_read  = conn_end_delimit;
+    conn->beg_write = conn_beg_write;
+    conn->end_write = conn_end_write;
+    conn->delete    = conn_delete;
+
+
+    //Keep a local copy for doing broadcast
+    priv->connections->push_back(priv->connections,*conn);
+
+    return 0;
+}
+
+static void serv_delete(struct q2pc_trans_s* this)
 {
     if(this){
+
         if(this->priv){
+            q2pc_tcp_priv* priv = (q2pc_tcp_priv*)this->priv;
+            priv->connections->delete(priv->connections);
+            close(priv->fd);
             free(this->priv);
         }
 
@@ -420,24 +429,24 @@ static void serv_delete(struct q2pc_trans_server_s* this)
 }
 
 
-
-static void init(q2pc_server_tcp_server_priv* priv, i64 client_count, const transport_s* transport)
+#define BUFF_SIZE (4096 * 1024) //A 4MB buffer. Just because
+static void init(q2pc_tcp_priv* priv)
 {
 
-    ch_log_debug1("Constructing TCP transport\n", client_count);
-    #define BUFF_SIZE (4096 * 1024) //A 4MB buffer. Just because
+    ch_log_debug1("Constructing TCP transport\n");
+
     void* write_all_buff = calloc(1,BUFF_SIZE);
     if(!write_all_buff){
         ch_log_fatal("Malloc for new write all buffer failed!\n");
     }
     priv->write_all_buffer      = write_all_buff;
     priv->write_all_buffer_size = BUFF_SIZE;
+    priv->connections           = CH_VECTOR_NEW(TRANS_CONN,1024,0);
 
     priv->fd = socket(AF_INET,SOCK_STREAM,0);
     if (priv->fd < 0 ){
         ch_log_fatal("Could not create TCP socket (%s)\n", strerror(errno));
     }
-
 
     int reuse_opt = 1;
     if(setsockopt(priv->fd, SOL_SOCKET, SO_REUSEADDR, &reuse_opt, sizeof(int)) < 0) {
@@ -446,65 +455,78 @@ static void init(q2pc_server_tcp_server_priv* priv, i64 client_count, const tran
 
     struct sockaddr_in addr;
     memset(&addr,0,sizeof(addr));
-    addr.sin_family      = AF_INET;
-    addr.sin_addr.s_addr = INADDR_ANY; //Listen to any port
-    addr.sin_port        = htons(transport->port);
 
-    if(bind(priv->fd, (struct sockaddr *)&addr, sizeof(addr)) ){
-        uint64_t i = 0;
+    if(priv->transport.server){
+        addr.sin_family      = AF_INET;
+        addr.sin_addr.s_addr = INADDR_ANY; //Listen to any address
+        addr.sin_port        = htons(priv->transport.port);
 
-        //Will wait up to two minutes trying if the address is in use.
-        //Helpful for quick restarts of apps as linux keeps some state
-        //arround for a while.
-        const int64_t seconds_per_try = 5;
-        const int64_t seconds_total = 120;
-        for(i = 0; i < seconds_total / seconds_per_try && errno == EADDRINUSE; i++){
-            ch_log_debug1("%i] %s --> sleeping for %i seconds...\n",i, strerror(errno), seconds_per_try);
-            sleep(seconds_per_try);
-            bind(priv->fd, (struct sockaddr *)&addr, sizeof(addr));
+    }
+    else{
+        addr.sin_family      = AF_INET;
+        addr.sin_addr.s_addr = inet_addr(priv->transport.ip);
+        addr.sin_port        = htons(priv->transport.port);
+    }
+
+    if(priv->transport.server){
+        if(bind(priv->fd, (struct sockaddr *)&addr, sizeof(addr)) ){
+            uint64_t i = 0;
+
+            //Will wait up to two minutes trying if the address is in use.
+            //Helpful for quick restarts of apps as linux keeps some state
+            //arround for a while.
+            const int64_t seconds_per_try = 5;
+            const int64_t seconds_total = 120;
+            for(i = 0; i < seconds_total / seconds_per_try && errno == EADDRINUSE; i++){
+                ch_log_debug1("%i] %s --> sleeping for %i seconds...\n",i, strerror(errno), seconds_per_try);
+                sleep(seconds_per_try);
+                bind(priv->fd, (struct sockaddr *)&addr, sizeof(addr));
+            }
+
+            if(errno){
+                ch_log_fatal("TCP server bind failed: %s\n",strerror(errno));
+            }
+            else{
+                ch_log_debug1("Successfully bound after delay.\n");
+            }
         }
 
-        if(errno){
-            ch_log_fatal("TCP server bind failed: %s\n",strerror(errno));
+        int result = listen(priv->fd, 0);
+        if(unlikely( result < 0 )){
+            ch_log_fatal("TCP server listen failed: %s\n",strerror(errno));
         }
-        else{
-            ch_log_debug1("Successfully bound after delay.\n");
+    }
+    else{
+        int result = connect(priv->fd,(struct sockaddr *)&addr, sizeof(addr));
+        if(unlikely( result < 0 )){
+            ch_log_fatal("TCP server connect failed: %s\n",strerror(errno));
         }
     }
 
-
-    int result = listen(priv->fd, 0);
-    if(unlikely( result < 0 )){
-        ch_log_fatal("TCP server listen failed: %s\n",strerror(errno));
-    }
-
-    ch_log_debug1("Done constructing TCP transport\n", client_count);
-
-
+    ch_log_debug1("Done constructing TCP transport\n");
 
 }
 
 
-q2pc_trans_server* q2pc_sever_tcp_construct(const transport_s* transport, i64 client_count)
+q2pc_trans* q2pc_tcp_construct(const transport_s* transport)
 {
-    q2pc_trans_server* result = (q2pc_trans_server*)calloc(1,sizeof(q2pc_trans_server));
+    q2pc_trans* result = (q2pc_trans*)calloc(1,sizeof(q2pc_trans));
     if(!result){
         ch_log_fatal("Could not allocate TCP server structure\n");
     }
 
-    q2pc_server_tcp_server_priv* priv = (q2pc_server_tcp_server_priv*)calloc(1,sizeof(q2pc_server_tcp_server_priv));
+    q2pc_tcp_priv* priv = (q2pc_tcp_priv*)calloc(1,sizeof(q2pc_tcp_priv));
     if(!priv){
         ch_log_fatal("Could not allocate TCP server private structure\n");
     }
 
-
     result->priv          = priv;
-    result->connectall    = doconnectall;
+    result->connect       = doconnect;
     result->delete        = serv_delete;
     result->beg_write_all = beg_write_all;
     result->end_write_all = end_write_all;
-
-    init(priv, client_count, transport);
+    memcpy(&priv->transport,transport, sizeof(transport_s));
+    init(priv);
 
 
     return result;

@@ -141,6 +141,8 @@ int main(int argc, char** argv)
     transport.qjump_epoch   = options.qjump_epoch;
     transport.qjump_limit   = options.qjump_psize;
     transport.port          = options.port;
+    transport.ip            = options.client;
+    transport.server        = options.server;
 
 
     //Configure application options
@@ -158,7 +160,7 @@ int main(int argc, char** argv)
     //real work begins here:
     /********************************************************/
     if(options.client){
-        run_client(options.client,&transport);
+        run_client(&transport);
     }
     else{
         run_server(options.threads, options.server,&transport);
