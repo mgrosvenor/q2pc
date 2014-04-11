@@ -11,6 +11,6 @@
 #include "../../deps/chaste/chaste.h"
 #include "../transport/q2pc_transport.h"
 
-void run_client(const transport_s* transport, i64 client_id);
+void run_client(const transport_s* transport, i64 client_id, i64 wait_time);
 
 #endif /* Q2PC_CLIENT_H_ */

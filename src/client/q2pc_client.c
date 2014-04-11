@@ -184,7 +184,7 @@ static int do_phase2(i64 timeout)
 }
 
 
-void run_client(const transport_s* transport, i64 client_id)
+void run_client(const transport_s* transport, i64 client_id, i64 wait_time)
 {
     client_num = client_id;
     init(transport);
@@ -192,7 +192,7 @@ void run_client(const transport_s* transport, i64 client_id)
 
     while(1){
         do_phase1(-1);
-        if(do_phase2(500*1000)){
+        if(do_phase2(wait_time)){
             ch_log_debug1("Commit aborted\n");
         }
         else{

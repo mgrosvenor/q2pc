@@ -24,6 +24,7 @@ static struct {
 	bool trans_udp_nm;
 	bool trans_rdp_nm;
 	bool trans_udp_qj;
+    i64 port;
 
 	//Qjump transport options
 	i64 qjump_epoch;
@@ -37,7 +38,9 @@ static struct {
 	char* log_filename;
 	i64 log_verbosity;
 
-	i64 port;
+	//General
+	i64 waittime;
+	i64 report_int;
 
 } options;
 
@@ -73,6 +76,8 @@ int main(int argc, char** argv)
     ch_opt_addsi(CH_OPTION_OPTIONAL, 'F', "log-file",   "Log to the file supplied",	&options.log_filename, 	NULL);
     ch_opt_addii(CH_OPTION_OPTIONAL, 'v', "log-level",  "Log level verbosity (0 = lowest, 6 = highest)",  &options.log_verbosity, CH_LOG_LVL_INFO);
 
+    ch_opt_addii(CH_OPTION_OPTIONAL, 'w',"wait","How long to wait for client/server delay (us)", &options.waittime, 2000 * 1000);
+    ch_opt_addii(CH_OPTION_OPTIONAL, 'r',"report", "reporting interval for statistics", &options.report_int, 100);
     //Parse it all up
     ch_opt_parse(argc,argv);
 
@@ -169,10 +174,10 @@ int main(int argc, char** argv)
     //real work begins here:
     /********************************************************/
     if(options.client){
-        run_client(&transport, options.client_id);
+        run_client(&transport, options.client_id, options.waittime);
     }
     else{
-        run_server(options.threads, options.server,&transport);
+        run_server(options.threads, options.server,&transport, options.waittime, options.report_int);
     }
 
     return 0;

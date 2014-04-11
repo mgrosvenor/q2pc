@@ -401,7 +401,7 @@ q2pc_commit_status_t do_phase2(q2pc_commit_status_t phase1_status, i64 client_co
 
 }
 
-void run_server(const i64 thread_count, const i64 client_count , const transport_s* transport)
+void run_server(const i64 thread_count, const i64 client_count , const transport_s* transport, i64 wait_time, i64 report_int)
 {
     //Set up all the threads, scoreboard, transport connections etc.
     server_init(thread_count, client_count, transport);
@@ -415,7 +415,6 @@ void run_server(const i64 thread_count, const i64 client_count , const transport
     gettimeofday(&ts_start, NULL);
     ts_start_us = ts_start.tv_sec * 1000 * 1000 + ts_start.tv_usec;
 
-    const i64 report_int = 10000;
     ch_log_info("Running...\n");
     for(i64 requests = 0; ; requests++){
 
@@ -434,8 +433,8 @@ void run_server(const i64 thread_count, const i64 client_count , const transport
 
 
         q2pc_commit_status_t status;
-        status = do_phase1(client_count, 20 * 1000*1000);
-        status = do_phase2(status,client_count, 20 * 1000 * 1000);
+        status = do_phase1(client_count, wait_time);
+        status = do_phase2(status,client_count, wait_time);
 
         switch(status){
             case q2pc_cluster_fail:     cleanup(); ch_log_fatal("Cluster failed\n"); break;
