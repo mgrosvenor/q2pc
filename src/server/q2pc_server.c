@@ -222,8 +222,10 @@ void send_request(q2pc_msg_type_t msg_type)
 
 typedef enum {  q2pc_request_success, q2pc_request_fail, q2pc_commit_success, q2pc_commit_fail, q2pc_cluster_fail } q2pc_commit_status_t;
 
-q2pc_commit_status_t do_phase1(i64 client_count)
+q2pc_commit_status_t do_phase1(i64 client_count, i64 timeout_us)
 {
+
+    q2pc_commit_status_t result = q2pc_request_success;
 
     //Init the scoreboard
     for(int i = 0; i < client_count; i++){
@@ -236,32 +238,39 @@ q2pc_commit_status_t do_phase1(i64 client_count)
     send_request(q2pc_request_msg);
 
     //wait for all the responses
-    usleep(200 * 1000);
+    usleep(timeout_us);
 
     //Stop all the receiver threads
     dopause_all();
     for(int i = 0; i < client_count; i++){
         __builtin_prefetch(votes_scoreboard + i + 1);
-        if(votes_scoreboard[i] == q2pc_lost_msg){
-            ch_log_warn("Q2PC: phase 1 - client %li message lost, cluster failed\n",i);
-            return q2pc_cluster_fail;
-        }
-        if(votes_scoreboard[i] == q2pc_vote_no_msg){
-            ch_log_debug1("client %li voted no.\n",i);
-            return q2pc_request_fail;
-        }
-        if(votes_scoreboard[i] != q2pc_vote_yes_msg){
-            ch_log_debug1("client %li sent an unexpected message type\n",i);
-            ch_log_fatal("Protocol violation\n");
+        switch(votes_scoreboard[i]){
+            case q2pc_vote_yes_msg:
+                ch_log_debug1("client %li voted yes.\n",i);
+                continue;
+
+            case q2pc_vote_no_msg:
+                ch_log_debug1("client %li voted no.\n",i);
+                result = q2pc_request_fail;
+                break;
+
+            case q2pc_lost_msg:
+                ch_log_warn("Q2PC: phase 1 - client %li message lost, cluster failed\n",i);
+                result = q2pc_cluster_fail;
+                break;
+
+            default:
+                ch_log_debug1("Q2PC: Server [M] phase 1 - client %li sent an unexpected message type %i\n",i,votes_scoreboard[i]);
+                ch_log_fatal("Protocol violation\n");
         }
     }
     unpause_all();
 
-    return q2pc_request_success;
+    return result;
 }
 
 
-i64 do_phase2(q2pc_commit_status_t status, i64 client_count)
+q2pc_commit_status_t do_phase2(q2pc_commit_status_t phase1_status, i64 client_count, i64 timeout_us)
 {
 
     //Init the scoreboard
@@ -270,7 +279,7 @@ i64 do_phase2(q2pc_commit_status_t status, i64 client_count)
         votes_scoreboard[i] = q2pc_lost_msg;
     }
 
-    switch(status){
+    switch(phase1_status){
         case q2pc_request_success:
             ch_log_debug2("Q2PC Server: [M]--> commit\n");
             send_request(q2pc_commit_msg);
@@ -286,25 +295,34 @@ i64 do_phase2(q2pc_commit_status_t status, i64 client_count)
     }
 
     //wait for all the responses
-    usleep(200 * 1000);
+    usleep(timeout_us);
 
     //Stop all the receiver threads
     dopause_all();
+    q2pc_commit_status_t result = q2pc_commit_success;
     for(int i = 0; i < client_count; i++){
         __builtin_prefetch(votes_scoreboard + i + 1);
-        if(votes_scoreboard[i] == q2pc_lost_msg){
-            ch_log_warn("Q2PC: phase 2 - client %li message lost, cluster failed\n",i);
-            return q2pc_cluster_fail;
-        }
-        if(votes_scoreboard[i] != q2pc_ack_msg){
-            ch_log_debug1("client %li sent an unexpected message type\n",i);
-            return q2pc_cluster_fail;
+
+        switch(votes_scoreboard[i]){
+            case q2pc_ack_msg:
+                continue;
+
+            case q2pc_lost_msg:
+                ch_log_warn("Q2PC: Server [M] phase 2 - client %li message lost, cluster failed\n",i);
+                result = q2pc_cluster_fail;
+                break;
+            default:
+                ch_log_debug1("Q2PC: Server [M] phase 2 - client %li sent an unexpected message type %i\n",i,votes_scoreboard[i]);
+                result = q2pc_cluster_fail;
         }
     }
     unpause_all();
 
+    if(result == q2pc_cluster_fail){
+        return q2pc_cluster_fail;
+    }
 
-    switch(status){
+    switch(phase1_status){
         case q2pc_request_success:  return q2pc_commit_success;
         case q2pc_request_fail:     return q2pc_commit_fail;
         default:
@@ -322,8 +340,8 @@ void run_server(const i64 thread_count, const i64 client_count , const transport
     server_init(thread_count, client_count, transport);
     while(1){
         q2pc_commit_status_t status;
-        status = do_phase1(client_count);
-        status = do_phase2(status,client_count);
+        status = do_phase1(client_count,200*1000);
+        status = do_phase2(status,client_count, 200*1000);
 
         switch(status){
             case q2pc_cluster_fail:     cleanup(); ch_log_fatal("Cluster failed\n"); break;

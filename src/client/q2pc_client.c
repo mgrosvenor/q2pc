@@ -120,7 +120,6 @@ u64 vote_count = 0;
 static int do_phase1(i64 timeout)
 {
     q2pc_msg* msg = get_messge(timeout);
-    ch_log_debug1("Phase 1 --> Msg %p\n", msg);
     if(!msg){
         ch_log_error("Server has terminated. Cannot continue\n");
         term(0);
@@ -193,7 +192,12 @@ void run_client(const transport_s* transport, i64 client_id)
 
     while(1){
         do_phase1(-1);
-        do_phase2(500*1000);
+        if(do_phase2(500*1000)){
+            ch_log_info("Commit aborted\n");
+        }
+        else{
+            ch_log_info("Commit succeed\n");
+        }
     }
 
 }
