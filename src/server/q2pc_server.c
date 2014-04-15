@@ -78,8 +78,17 @@ void do_connectall(i64 client_count)
     cons = CH_ARRAY_NEW(TRANS_CONN,client_count,NULL);
     if(!cons){ ch_log_fatal("Cannot allocate connections array\n"); }
 
-    for(int i = 0; i < client_count; i++){
-        trans->connect(trans, cons->off(cons,i));
+    i64 connected = 0;
+    while(connected < client_count){
+        for(int i = 0; i < client_count; i++){
+
+            //Connections are non-blocking
+            if(trans->connect(trans, cons->off(cons,i))){
+                continue;
+            }
+
+            connected++;
+        }
     }
 
 }

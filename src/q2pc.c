@@ -154,6 +154,8 @@ int main(int argc, char** argv)
     transport.port          = options.port;
     transport.ip            = options.client;
     transport.server        = options.server;
+    transport.client_count  = options.server;
+    transport.client_id     = options.client_id;
 
 
     //Configure application options

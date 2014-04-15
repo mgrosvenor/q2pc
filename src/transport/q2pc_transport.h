@@ -22,6 +22,8 @@ typedef struct {
     u16 port;
     bool server;
     char* ip;
+    i64 client_count;
+    i64 client_id;
 } transport_s;
 
 

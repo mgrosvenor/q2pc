@@ -8,12 +8,14 @@
 
 #include "q2pc_transport.h"
 #include "q2pc_trans_tcp.h"
+#include "q2pc_trans_udp.h"
 
 
 q2pc_trans* trans_factory(const transport_s* transport)
 {
     switch(transport->type){
         case tcp_ln: return q2pc_tcp_construct(transport);
+        case udp_ln: return q2pc_udp_construct(transport);
         default: ch_log_fatal("Not implemented\n");
     }
 

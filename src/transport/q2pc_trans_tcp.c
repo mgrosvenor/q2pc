@@ -254,6 +254,10 @@ static int conn_end_write(struct q2pc_trans_conn_s* this, i64 len)
 
     while(len > 0){
         i64 written =  write(priv->fd, data ,len);
+        if(written < 0){
+            ch_log_fatal("TCP write failed: %s\n",strerror(errno));
+        }
+
         data += written;
         len -= written;
     }
@@ -377,7 +381,7 @@ static q2pc_tcp_conn_priv* new_conn_priv()
 
 
 
-//Wait for all clients to connect
+//Let a client conect
 static int doconnect(struct q2pc_trans_s* this, q2pc_trans_conn* conn)
 {
     q2pc_tcp_priv* priv = (q2pc_tcp_priv*)this->priv;

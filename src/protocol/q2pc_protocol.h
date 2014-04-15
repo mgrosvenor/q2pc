@@ -17,7 +17,8 @@ typedef enum {
     q2pc_vote_no_msg,
     q2pc_commit_msg,
     q2pc_cancel_msg,
-    q2pc_ack_msg
+    q2pc_ack_msg,
+    q2pc_con_msg
 } q2pc_msg_type_t;
 
 typedef struct __attribute__((__packed__)) {
