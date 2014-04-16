@@ -314,7 +314,6 @@ static int doconnect(struct q2pc_trans_s* this, q2pc_trans_conn* conn)
 
         }
 
-
         conn->priv = new_priv;
         trans_priv->connections++;
     }

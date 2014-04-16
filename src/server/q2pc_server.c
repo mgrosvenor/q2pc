@@ -82,12 +82,33 @@ void do_connectall(i64 client_count)
     while(connected < client_count){
         for(int i = 0; i < client_count; i++){
 
-            //Connections are non-blocking
-            if(trans->connect(trans, cons->off(cons,i))){
+            q2pc_trans_conn* conn = cons->off(cons,i);
+
+            if(!conn->priv){
+                //Connections are non-blocking
+                if(trans->connect(trans, conn)){
+                    continue;
+                }
+            }
+
+
+            char* data;
+            i64 len;
+            if(conn->beg_read(conn,&data, &len)){
                 continue;
             }
 
-            connected++;
+            if(len < (i64)sizeof(q2pc_msg)){
+                ch_log_fatal("Message is smaller than Q2PC message should be. (%li<%li)\n", len, sizeof(q2pc_msg));
+            }
+
+            q2pc_msg* msg = (q2pc_msg*)data;
+
+            switch(msg->type){
+                case q2pc_con_msg: connected++; continue;
+                default:
+                    ch_log_fatal("Unexpected message of type %i\n", msg->type);
+            }
         }
     }
 
