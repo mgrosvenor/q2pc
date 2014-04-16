@@ -105,10 +105,12 @@ void do_connectall(i64 client_count)
             q2pc_msg* msg = (q2pc_msg*)data;
 
             switch(msg->type){
-                case q2pc_con_msg: connected++; continue;
+                case q2pc_con_msg: connected++; break;
                 default:
                     ch_log_fatal("Unexpected message of type %i\n", msg->type);
             }
+
+            conn->end_read(conn);
         }
     }
 

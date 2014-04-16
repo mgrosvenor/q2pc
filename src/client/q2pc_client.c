@@ -43,7 +43,32 @@ static void init(const transport_s* transport)
     //Set up all the connections
     ch_log_debug1("Connecting to server...\n");
     trans = trans_factory(transport);
-    trans->connect(trans,&conn);
+
+    bool connected = false;
+    while(!connected){
+                          //Connections are non-blocking
+        if(trans->connect(trans, &conn)){
+            continue;
+        }
+
+        char* data;
+        i64 len;
+        if(conn.beg_write(&conn,&data, &len)){
+            continue;
+        }
+
+        if(len < (i64)sizeof(q2pc_msg)){
+            ch_log_fatal("Message buffer is smaller than Q2PC message needs be. (%li<%li)\n", len, sizeof(q2pc_msg));
+        }
+
+        q2pc_msg* msg = (q2pc_msg*)data;
+        msg->type = q2pc_con_msg;
+
+        conn.end_write(&conn, sizeof(q2pc_msg));
+        connected = true;
+
+    }
+
     ch_log_debug1("Connecting to server...Done.\n");
 }
 
@@ -130,22 +155,22 @@ static int do_phase1(i64 timeout)
 
 
     switch(msg->type){
-        case q2pc_request_msg:
-            ch_log_debug2("Q2PC Client: [M]<-- request\n");
+    case q2pc_request_msg:
+        ch_log_debug2("Q2PC Client: [M]<-- request\n");
 
-            if(vote_yes){
-                ch_log_debug2("Q2PC Client: [M]--> vote yes\n");
-                send_response(q2pc_vote_yes_msg);
-                break;
-            }
-            else{
-                ch_log_debug2("Q2PC Client: [M]--> vote no\n");
-                send_response(q2pc_vote_no_msg);
-                break;
-            }
-        default:
-            ch_log_debug2("Q2PC Client: [M]<-- Unknown message (%i)\n", msg->type);
-            ch_log_fatal("Protocol failure, in phase 1 unexpected message type %i\n", msg->type);
+        if(vote_yes){
+            ch_log_debug2("Q2PC Client: [M]--> vote yes\n");
+            send_response(q2pc_vote_yes_msg);
+            break;
+        }
+        else{
+            ch_log_debug2("Q2PC Client: [M]--> vote no\n");
+            send_response(q2pc_vote_no_msg);
+            break;
+        }
+    default:
+        ch_log_debug2("Q2PC Client: [M]<-- Unknown message (%i)\n", msg->type);
+        ch_log_fatal("Protocol failure, in phase 1 unexpected message type %i\n", msg->type);
     }
 
     vote_count++;
@@ -163,20 +188,20 @@ static int do_phase2(i64 timeout)
 
 
     switch(msg->type){
-        case q2pc_commit_msg:
-            ch_log_debug2("Q2PC Client: [M]<-- commit\n");
-            send_response(q2pc_ack_msg);
-            ch_log_debug2("Q2PC Client: [M]--> ack\n");
-            result = 0;
-            break;
-        case q2pc_cancel_msg:
-            ch_log_debug2("Q2PC Client: [M]<-- cancel\n");
-            send_response(q2pc_ack_msg);
-            ch_log_debug2("Q2PC Client: [M]--> ack\n");
-            result = 1;
-            break;
-        default:
-            ch_log_fatal("Protocol failure, in phase 2 unexpected message type %i\n", msg->type);
+    case q2pc_commit_msg:
+        ch_log_debug2("Q2PC Client: [M]<-- commit\n");
+        send_response(q2pc_ack_msg);
+        ch_log_debug2("Q2PC Client: [M]--> ack\n");
+        result = 0;
+        break;
+    case q2pc_cancel_msg:
+        ch_log_debug2("Q2PC Client: [M]<-- cancel\n");
+        send_response(q2pc_ack_msg);
+        ch_log_debug2("Q2PC Client: [M]--> ack\n");
+        result = 1;
+        break;
+    default:
+        ch_log_fatal("Protocol failure, in phase 2 unexpected message type %i\n", msg->type);
     }
 
 
