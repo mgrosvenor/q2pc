@@ -24,9 +24,10 @@ static struct {
 	bool trans_udp_nm;
 	bool trans_rdp_nm;
 	bool trans_udp_qj;
-    i64 port;
 
-	//Qjump transport options
+	//Transport options
+    char* bcast;
+	i64 port;
 	i64 qjump_epoch;
 	i64 qjump_psize;
 
@@ -62,9 +63,9 @@ int main(int argc, char** argv)
     ch_opt_addbi(CH_OPTION_FLAG,    'R',"rdp-nm","Use NetMap based RDP transport", &options.trans_rdp_nm, false);
     ch_opt_addbi(CH_OPTION_FLAG,    'Q',"udp-qj","Use NetMap based UDP transport over Q-Jump", &options.trans_udp_qj, false);
 
-    ch_opt_addii(CH_OPTION_OPTIONAL,'p',"port","Port to use for all transports", &options.port, 7331);
-
     //Qjump Transport options
+    ch_opt_addii(CH_OPTION_OPTIONAL,'p',"port","Port to use for all transports", &options.port, 7331);
+    ch_opt_addsi(CH_OPTION_OPTIONAL,'B',"broadcast","The broadcast IP address to use in UDP mode ini x.x.x.x format", &options.bcast, "127.255.255.255");
     ch_opt_addii(CH_OPTION_OPTIONAL, 'E',"qjump-epoch", "The Q-Jump epoch in microseconds", &options.qjump_epoch, 100 );
     ch_opt_addii(CH_OPTION_OPTIONAL, 'P',"qjump-psize", "The Q-Jump packet size in bytes", &options.qjump_psize, 64 );
 
@@ -156,6 +157,7 @@ int main(int argc, char** argv)
     transport.server        = options.server;
     transport.client_count  = options.server;
     transport.client_id     = options.client_id;
+    transport.bcast         = options.bcast;
 
 
     //Configure application options

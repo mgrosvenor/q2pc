@@ -224,7 +224,7 @@ static q2pc_udp_conn_priv* init_new_conn(q2pc_trans_conn* conn)
 
 static void safe_connect(int fd, struct sockaddr_in* addr)
 {
-    if( connect(fd, (struct sockaddr *)&addr, sizeof(addr)) ){
+    if( connect(fd, (struct sockaddr *)addr, sizeof(struct sockaddr_in)) ){
         ch_log_fatal("UDP connect failed: %s\n",strerror(errno));
     }
 
@@ -233,7 +233,10 @@ static void safe_connect(int fd, struct sockaddr_in* addr)
 
 static void safe_wait_bind(int fd, struct sockaddr_in* addr)
 {
-    if(bind(fd, (struct sockaddr *)&addr, sizeof(addr)) ){
+
+    ch_log_debug3("Binding on %i port=%i\n", fd, ntohs(addr->sin_port));
+
+    if(bind(fd, (struct sockaddr *)addr, sizeof(struct sockaddr_in)) ){
         uint64_t i = 0;
 
         //Will wait up to two minutes trying if the address is in use.
@@ -265,11 +268,11 @@ static int doconnect(struct q2pc_trans_s* this, q2pc_trans_conn* conn)
     q2pc_udp_priv* trans_priv = (q2pc_udp_priv*)this->priv;
     q2pc_udp_conn_priv* conn_priv = (q2pc_udp_conn_priv*)conn->priv;
 
-    if(!conn_priv->fd){
+    if(!conn_priv){
 
         q2pc_udp_conn_priv* new_priv = init_new_conn(conn);
 
-        new_priv->fd = socket(AF_INET,SOCK_STREAM,0);
+        new_priv->fd = socket(AF_INET,SOCK_DGRAM,0);
         if (new_priv->fd < 0 ){
             ch_log_fatal("Could not create UDP socket (%s)\n", strerror(errno));
         }
@@ -295,7 +298,6 @@ static int doconnect(struct q2pc_trans_s* this, q2pc_trans_conn* conn)
             addr.sin_addr.s_addr = INADDR_ANY;
             addr.sin_port        = htons(trans_priv->transport.port + trans_priv->connections);
             safe_wait_bind(new_priv->fd,&addr);
-
         }
         else{
 
@@ -313,6 +315,7 @@ static int doconnect(struct q2pc_trans_s* this, q2pc_trans_conn* conn)
         }
 
 
+        conn->priv = new_priv;
         trans_priv->connections++;
     }
 
@@ -350,7 +353,7 @@ static void init(q2pc_udp_priv* priv)
     priv->write_all_buffer_size = BUFF_SIZE;
     priv->connections           = 0;
 
-    priv->fd = socket(AF_INET,SOCK_STREAM,0);
+    priv->fd = socket(AF_INET,SOCK_DGRAM,0);
     if (priv->fd < 0 ){
         ch_log_fatal("Could not create UDP socket (%s)\n", strerror(errno));
     }
@@ -360,22 +363,28 @@ static void init(q2pc_udp_priv* priv)
         ch_log_fatal("UDP set reuse address failed: %s\n",strerror(errno));
     }
 
+    struct sockaddr_in addr;
+    memset(&addr,0,sizeof(addr));
+
+    addr.sin_family      = AF_INET;
+    addr.sin_addr.s_addr = inet_addr(priv->transport.bcast);
+    addr.sin_port        = htons(priv->transport.port);
+
+    if(connect(priv->fd, (struct sockaddr *)&addr, sizeof(addr)) ){
+        ch_log_fatal("UDP connect failed on fd=%i - %s\n",priv->fd,strerror(errno));
+    }
+
     int flags = 0;
     flags |= O_NONBLOCK;
     if( fcntl(priv->fd, F_SETFL, flags) == -1){
         ch_log_fatal("Could not set non-blocking on fd=%i: %s\n",priv->write_all_buffer,strerror(errno));
     }
 
-    struct sockaddr_in addr;
-    memset(&addr,0,sizeof(addr));
-
-    addr.sin_family      = AF_INET;
-    addr.sin_addr.s_addr = INADDR_BROADCAST; //Listen to any address
-    addr.sin_port        = htons(priv->transport.port);
-
-    if(connect(priv->fd, (struct sockaddr *)&addr, sizeof(addr)) ){
-        ch_log_fatal("UDP connect failed on fd=%i - %s\n",priv->fd,strerror(errno));
+    int broadcastEnable=1;
+    if( setsockopt(priv->fd, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, sizeof(broadcastEnable)) ){
+        ch_log_fatal("Could not set broadcast on fd=%i: %s\n",priv->write_all_buffer,strerror(errno));
     }
+
 
     priv->connections++;
 
