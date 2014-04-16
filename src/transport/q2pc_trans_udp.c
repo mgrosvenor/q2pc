@@ -222,6 +222,43 @@ static q2pc_udp_conn_priv* init_new_conn(q2pc_trans_conn* conn)
 }
 
 
+static void safe_connect(int fd, struct sockaddr_in* addr)
+{
+    if( connect(fd, (struct sockaddr *)&addr, sizeof(addr)) ){
+        ch_log_fatal("UDP connect failed: %s\n",strerror(errno));
+    }
+
+}
+
+
+static void safe_wait_bind(int fd, struct sockaddr_in* addr)
+{
+    if(bind(fd, (struct sockaddr *)&addr, sizeof(addr)) ){
+        uint64_t i = 0;
+
+        //Will wait up to two minutes trying if the address is in use.
+        //Helpful for quick restarts of apps as Linux keeps some state
+        //around for a while.
+        const int64_t seconds_per_try = 5;
+        const int64_t seconds_total = 120;
+        for(i = 0; i < seconds_total / seconds_per_try && errno == EADDRINUSE; i++){
+            ch_log_debug1("%i] %s --> sleeping for %i seconds...\n",i, strerror(errno), seconds_per_try);
+            sleep(seconds_per_try);
+            bind(fd, (struct sockaddr *)&addr, sizeof(addr));
+        }
+
+        if(errno){
+            ch_log_fatal("UDP server bind failed: %s\n",strerror(errno));
+        }
+        else{
+            ch_log_debug1("Successfully bound after delay.\n");
+        }
+    }
+
+}
+
+
+
 //Wait for all clients to connect
 static int doconnect(struct q2pc_trans_s* this, q2pc_trans_conn* conn)
 {
@@ -248,46 +285,33 @@ static int doconnect(struct q2pc_trans_s* this, q2pc_trans_conn* conn)
             ch_log_fatal("Could not set non-blocking on fd=%i: %s\n",new_priv->fd,strerror(errno));
         }
 
+
         struct sockaddr_in addr;
         memset(&addr,0,sizeof(addr));
 
         if(trans_priv->transport.server){
+            //Listen to any address, on the client port
             addr.sin_family      = AF_INET;
-            addr.sin_addr.s_addr = INADDR_ANY; //Listen to any address
+            addr.sin_addr.s_addr = INADDR_ANY;
             addr.sin_port        = htons(trans_priv->transport.port + trans_priv->connections);
+            safe_wait_bind(new_priv->fd,&addr);
 
         }
         else{
+
+            //Listen to any address, on the server broadcast port
             addr.sin_family      = AF_INET;
-            addr.sin_addr.s_addr = inet_addr(trans_priv->transport.ip);//Listen to the client specific port
+            addr.sin_addr.s_addr = INADDR_ANY;
+            addr.sin_port        = htons(trans_priv->transport.port);
+            safe_wait_bind(new_priv->fd,&addr);
+
+            //Send to the server on the server port
+            addr.sin_addr.s_addr = inet_addr(trans_priv->transport.ip);
             addr.sin_port        = htons(trans_priv->transport.port + trans_priv->transport.client_id);
+            safe_connect(new_priv->fd,&addr);
+
         }
 
-        if(bind(conn_priv->fd, (struct sockaddr *)&addr, sizeof(addr)) ){
-            uint64_t i = 0;
-
-            //Will wait up to two minutes trying if the address is in use.
-            //Helpful for quick restarts of apps as Linux keeps some state
-            //around for a while.
-            const int64_t seconds_per_try = 5;
-            const int64_t seconds_total = 120;
-            for(i = 0; i < seconds_total / seconds_per_try && errno == EADDRINUSE; i++){
-                ch_log_debug1("%i] %s --> sleeping for %i seconds...\n",i, strerror(errno), seconds_per_try);
-                sleep(seconds_per_try);
-                bind(conn_priv->fd, (struct sockaddr *)&addr, sizeof(addr));
-            }
-
-            if(errno){
-                ch_log_fatal("UDP server bind failed: %s\n",strerror(errno));
-            }
-            else{
-                ch_log_debug1("Successfully bound after delay.\n");
-            }
-        }
-
-        if( connect(conn_priv->fd, (struct sockaddr *)&addr, sizeof(addr)) ){
-            ch_log_fatal("UDP connect failed: %s\n",strerror(errno));
-        }
 
         trans_priv->connections++;
     }
