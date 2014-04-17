@@ -159,6 +159,7 @@ int main(int argc, char** argv)
     transport.client_count  = options.server;
     transport.client_id     = options.client_id;
     transport.bcast         = options.bcast;
+    transport.iface         = options.iface;
 
 
     //Configure application options
