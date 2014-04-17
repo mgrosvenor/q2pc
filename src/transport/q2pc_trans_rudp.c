@@ -136,12 +136,6 @@ static void conn_delete(struct q2pc_trans_conn_s* this)
 
 typedef struct {
     int fd;
-
-    void* write_all_buffer;
-    i64   write_all_buffer_used;
-    i64   write_all_buffer_size;
-    int   wirte_all_fd;
-
     transport_s transport;
 
     i64 connections;
@@ -151,42 +145,6 @@ typedef struct {
 
 
 
-static int beg_write_all(struct q2pc_trans_s* this, char** data_o, i64* len_o)
-{
-    q2pc_rudp_priv* priv = (q2pc_rudp_priv*)this->priv;
-
-    *data_o = priv->write_all_buffer;
-    *len_o  = priv->write_all_buffer_size;
-
-    return 0;
-}
-
-static int end_write_all(struct q2pc_trans_s* this, i64 msg_len)
-{
-
-    ch_log_debug3("Sending %li bytes to broadcast\n", msg_len);
-    q2pc_rudp_priv* priv = (q2pc_rudp_priv*)this->priv;
-
-    if(msg_len > priv->write_all_buffer_size){
-        ch_log_fatal("Error: Wrote more data than the buffer could handle. Memory corruption is likely\n ");
-    }
-
-    char*   data = priv->write_all_buffer;
-
-
-    while(msg_len > 0){
-        i64 written =  write(priv->fd, data, msg_len);
-        if(written < 0){
-            ch_log_fatal("RUDP write all failed: %s\n",strerror(errno));
-        }
-        data    += written;
-        msg_len -= written;
-    }
-
-
-    return 0;
-
-}
 
 #define BUFF_SIZE (4096 * 1024) //A 4MB buffer. Just because it feels right
 static q2pc_rudp_conn_priv* new_conn_priv()
@@ -360,13 +318,7 @@ static void init(q2pc_rudp_priv* priv)
     ch_log_debug1("Constructing RUDP transport\n");
 
     //Set up a broadcast socket tp be used by sendall
-    void* write_all_buff = calloc(1,BUFF_SIZE);
-    if(!write_all_buff){
-        ch_log_fatal("Malloc for new write all buffer failed!\n");
-    }
-    priv->write_all_buffer      = write_all_buff;
-    priv->write_all_buffer_size = BUFF_SIZE;
-    priv->connections           = 0;
+    priv->connections = 0;
 
     priv->fd = socket(AF_INET,SOCK_DGRAM,0);
     if (priv->fd < 0 ){
@@ -429,8 +381,6 @@ q2pc_trans* q2pc_rudp_construct(const transport_s* transport)
     result->priv          = priv;
     result->connect       = doconnect;
     result->delete        = serv_delete;
-    result->beg_write_all = beg_write_all;
-    result->end_write_all = end_write_all;
     memcpy(&priv->transport,transport, sizeof(transport_s));
     init(priv);
 

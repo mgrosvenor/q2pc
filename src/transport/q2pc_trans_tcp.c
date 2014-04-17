@@ -290,66 +290,13 @@ static void conn_delete(struct q2pc_trans_conn_s* this)
 typedef struct {
     int fd;
 
-    void* write_all_buffer;
-    i64   write_all_buffer_used;
-    i64   write_all_buffer_size;
-
     transport_s transport;
-
-    CH_VECTOR(TRANS_CONN)* connections;
 
 } q2pc_tcp_priv;
 
 
 
 
-static int beg_write_all(struct q2pc_trans_s* this, char** data_o, i64* len_o)
-{
-    q2pc_tcp_priv* priv = (q2pc_tcp_priv*)this->priv;
-    if(!priv->connections){
-        return -1;
-    }
-
-    *data_o = priv->write_all_buffer;
-    *len_o  = priv->write_all_buffer_size;
-
-    return 0;
-}
-
-static int end_write_all(struct q2pc_trans_s* this, i64 msg_len)
-{
-
-    ch_log_debug3("Sending %li bytes\n", msg_len);
-    q2pc_tcp_priv* priv = (q2pc_tcp_priv*)this->priv;
-    if(!priv->connections){
-        return -1;
-    }
-    if(msg_len > priv->write_all_buffer_size){
-        ch_log_fatal("Error: Wrote more data than the buffer could handle. Memory corruption is likely\n ");
-    }
-
-
-    for(int i = 0; i < priv->connections->count; i++){
-        q2pc_trans_conn* conn = priv->connections->off(priv->connections,i);
-        char* data = NULL;
-        i64 len = 0;
-
-        if(conn->beg_write(conn,&data,&len)){
-            ch_log_fatal("Could not begin write on connection %i\n", i);
-        }
-
-        memcpy(data,priv->write_all_buffer, msg_len);
-
-        //Commit it
-        if(conn->end_write(conn, msg_len)){
-            return Q2PC_EFIN;
-        }
-
-    }
-
-    return Q2PC_ENONE;
-
-}
 
 static q2pc_tcp_conn_priv* new_conn_priv()
 {
@@ -415,10 +362,6 @@ static int doconnect(struct q2pc_trans_s* this, q2pc_trans_conn* conn)
     conn->end_write = conn_end_write;
     conn->delete    = conn_delete;
 
-
-    //Keep a local copy for doing broadcast
-    priv->connections->push_back(priv->connections,*conn);
-
     return 0;
 }
 
@@ -428,7 +371,6 @@ static void serv_delete(struct q2pc_trans_s* this)
 
         if(this->priv){
             q2pc_tcp_priv* priv = (q2pc_tcp_priv*)this->priv;
-            priv->connections->delete(priv->connections);
             close(priv->fd);
             free(this->priv);
         }
@@ -449,9 +391,6 @@ static void init(q2pc_tcp_priv* priv)
     if(!write_all_buff){
         ch_log_fatal("Malloc for new write all buffer failed!\n");
     }
-    priv->write_all_buffer      = write_all_buff;
-    priv->write_all_buffer_size = BUFF_SIZE;
-    priv->connections           = CH_VECTOR_NEW(TRANS_CONN,1024,0);
 
     priv->fd = socket(AF_INET,SOCK_STREAM,0);
     if (priv->fd < 0 ){
@@ -533,8 +472,6 @@ q2pc_trans* q2pc_tcp_construct(const transport_s* transport)
     result->priv          = priv;
     result->connect       = doconnect;
     result->delete        = serv_delete;
-    result->beg_write_all = beg_write_all;
-    result->end_write_all = end_write_all;
     memcpy(&priv->transport,transport, sizeof(transport_s));
     init(priv);
 

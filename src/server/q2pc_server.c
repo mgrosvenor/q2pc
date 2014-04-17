@@ -16,27 +16,24 @@
 #include "../transport/q2pc_transport.h"
 #include "../errors/errors.h"
 #include "../protocol/q2pc_protocol.h"
+#include "q2pc_server_worker.h"
 
 
-typedef struct{
-    i64 lo;
-    i64 hi;
-    i64 count;
-    i64 thread_id;
-} thread_params_t;
+//Server wide globals
+CH_ARRAY(TRANS_CONN)* cons       = NULL;
+CH_ARRAY(i64)* seqs              = NULL;
+volatile bool stop_signal        = false;
+volatile bool pause_signal       = false;
+volatile i64* votes_scoreboard   = NULL;
+volatile i64* votes_count        = NULL;
+volatile bool ack_seen           = false;
 
-void* run_thread( void* p);
-
-//Server wide global
-static CH_ARRAY(TRANS_CONN)* cons       = NULL;
-static volatile bool stop_signal        = false;
-static volatile bool pause_signal       = false;
-static pthread_t* threads               = NULL;
-static i64 real_thread_count            = 0;
-static volatile i64* votes_scoreboard   = NULL;
-static volatile i64* votes_count        = NULL;
-static q2pc_trans* trans                = NULL;
-static volatile i64 seq_no              = 0;
+//File globals
+static pthread_t* threads        = NULL;
+static i64 real_thread_count     = 0;
+static q2pc_trans* trans         = NULL;
+static i64 main_seq_no           = 0;
+static i64 client_count          = 0;
 
 
 void cleanup()
@@ -74,9 +71,10 @@ void dopause_all(){ pause_signal = true;  __sync_synchronize(); }
 void unpause_all(){ pause_signal = false; __sync_synchronize(); }
 
 //Wait for all clients to connect
-void do_connectall(i64 client_count)
+void do_connectall()
 {
     cons = CH_ARRAY_NEW(TRANS_CONN,client_count,NULL);
+    seqs = CH_ARRAY_NEW(i64,client_count,NULL);
     if(!cons){ ch_log_fatal("Cannot allocate connections array\n"); }
 
     i64 connected = 0;
@@ -121,7 +119,7 @@ void do_connectall(i64 client_count)
 
 
 
-void server_init(const i64 thread_count, const i64 client_count , const transport_s* transport)
+void server_init(const i64 thread_count, const i64 c_count, const transport_s* transport)
 {
 
     //Signal handling for the main thread
@@ -129,6 +127,8 @@ void server_init(const i64 thread_count, const i64 client_count , const transpor
     signal(SIGKILL, term);
     signal(SIGTERM, term);
     signal(SIGINT, term);
+
+    client_count = c_count;
 
     //Set up and init the voting scoreboard
     posix_memalign((void*)&votes_scoreboard, sizeof(i64), sizeof(i64) * client_count);
@@ -141,7 +141,7 @@ void server_init(const i64 thread_count, const i64 client_count , const transpor
     //Set up all the connections
     ch_log_info("Waiting for clients to connect...\n\r");
     trans = trans_factory(transport);
-    do_connectall(client_count);
+    do_connectall();
     ch_log_info("Waiting for clients to connect... Done.\n");
 
 
@@ -182,96 +182,38 @@ void server_init(const i64 thread_count, const i64 client_count , const transpor
 
 }
 
-#define BARRIER()  __asm__ volatile("" ::: "memory")
 
 
-void* run_thread( void* p)
-{
-    thread_params_t* params = (thread_params_t*)p;
-    i64 lo          = params->lo;
-    i64 hi          = params->hi;
-    i64 count       = params->count;
-    i64 thread_id   = params->thread_id;
-    free(params);
-
-    ch_log_debug3("Running worker thread\n");
-    while(!stop_signal){
-
-        //Busy loop if we're told to stop processing for a moment
-        if(pause_signal){
-            votes_count[thread_id] = 0;
-            __asm__("pause");
-            continue;
-        }
-
-        //Otherwise, busy loop looking for data
-        for(int i = lo; i < hi; i++){
-            q2pc_trans_conn* con = cons->off(cons,i);
-            char* data = NULL;
-            i64 len = 0;
-            i64 result = con->beg_read(con,&data, &len);
-            if(result != Q2PC_ENONE){
-                con->end_read(con);
-                continue;
-            }
-
-            q2pc_msg* msg = (q2pc_msg*)data;
-            //Bounds check the answer
-
-            if(msg->src_hostid < 1 || msg->src_hostid > count){
-                ch_log_warn("Client ID (%li) is out of the expected range [%i,%i]. Ignoring vote\n", msg->src_hostid, 1, count);
-                con->end_read(con);
-                continue;
-            }
-
-            votes_scoreboard[msg->src_hostid - 1] = msg->type;
-            switch(msg->type){
-                case q2pc_vote_yes_msg: ch_log_debug2("Q2PC Server: [%i]<-- vote yes from (%li)\n", thread_id, msg->src_hostid); break;
-                case q2pc_vote_no_msg:  ch_log_debug2("Q2PC Server: [%i]<-- vote no  from (%li)\n", thread_id, msg->src_hostid); break;
-                case q2pc_ack_msg:      ch_log_debug2("Q2PC Server: [%i]<-- ack      from (%li)\n", thread_id, msg->src_hostid); break;
-                default:
-                    ch_log_warn("Q2PC Server: [%i] <-- Unknown message (%i)   from (%li)\n",thread_id, msg->type, msg->src_hostid );
-            }
-            con->end_read(con);
-            BARRIER(); //Make sure there is no memory reordering here
-
-            votes_count[thread_id]++;
-            ch_log_debug2("Q2PC Server: [%li] Vote count=%li\n", thread_id,votes_count[thread_id]);
-
-        }
-    }
-
-    ch_log_debug3("Cleaning up connections...\n");
-    //We're done with the connections now, clean them up
-    for(int i = lo; i < hi; i++){
-        q2pc_trans_conn* con = cons->off(cons,i);
-        con->delete(con);
-    }
-
-    ch_log_debug3("Exiting worker thread\n");
-    return NULL;
-}
 
 
-static int send_requestxxx(q2pc_msg_type_t msg_type, i64 seq_no)
+static void send_request(q2pc_msg_type_t msg_type, i64 seq_no)
 {
     char* data;
     i64 len;
-    if(trans->beg_write_all(trans,&data,&len)){
-        ch_log_fatal("Could not complete broadcast message request\n");
+
+    for(int i = 0; i < client_count; i++){
+
+        q2pc_trans_conn* conn = cons->first + i;
+
+        if(conn->beg_write(conn,&data,&len)){
+            ch_log_fatal("Could not complete broadcast message request\n");
+        }
+
+        if(len < (i64)sizeof(q2pc_msg)){
+            ch_log_fatal("Not enough space to send a Q2PC message. Needed %li, but found %li\n", sizeof(q2pc_msg), len);
+        }
+
+        q2pc_msg* msg = (q2pc_msg*)data;
+        msg->type       = msg_type;
+        msg->src_hostid = ~0LL;
+        msg->seq_no     = seq_no;
+        seq_no++;
+
+        //Commit it
+        if(conn->end_write(conn, sizeof(q2pc_msg))){
+            ch_log_fatal("Could not commit broadcast message request\n");
+        }
     }
-
-    if(len < (i64)sizeof(q2pc_msg)){
-        ch_log_fatal("Not enough space to send a Q2PC message. Needed %li, but found %li\n", sizeof(q2pc_msg), len);
-    }
-
-    q2pc_msg* msg = (q2pc_msg*)data;
-    msg->type       = msg_type;
-    msg->src_hostid = ~0LL;
-    msg->seq_no     = seq_no;
-
-    //Commit it
-    return trans->end_write_all(trans, sizeof(q2pc_msg));
 
 }
 
@@ -285,18 +227,18 @@ int send_request_reliable(q2pc_msg_type_t msg_type, i64 timeout_us)
     i64 ts_start_us         = 0;
     i64 ts_now_us           = 0;
 
-    const i64 seq_no_local = seq_no;
 
     gettimeofday(&ts_start, NULL);
     ts_start_us = ts_start.tv_sec * 1000 * 1000 + ts_start.tv_usec;
 
 
-    send_requestxxx(msg_type,timeout_us);
+    send_request(msg_type,timeout_us);
     int rto = 0;
+    ack_seen = false;
     for(rto = 0; rto < 5;){
 
-        if(seq_no > seq_no_local){
-            ch_log_debug3("Got ack for seq=%li, new seq=%li\n", seq_no_local, seq_no);
+        if(ack_seen){
+            ch_log_debug3("Got ack for seq=%li", main_seq_no);
             break;
         }
 
@@ -307,16 +249,14 @@ int send_request_reliable(q2pc_msg_type_t msg_type, i64 timeout_us)
         }
 
         ch_log_warn("Retransmit timeout fired\n");
-        int ret = send_requestxxx(msg_type,timeout_us);
-        if(ret){
-            return Q2PC_EFIN;
-        }
+        send_request(msg_type,timeout_us);
 
         rto++;
     }
 
     if(rto >= 5){
-        ch_log_fatal("Too many timeouts, cannot send request, cluster failed\n");
+        ch_log_error("Too many timeouts, cannot send request, cluster failed\n");
+        return Q2PC_EFIN;
     }
 
 
@@ -327,7 +267,7 @@ int send_request_reliable(q2pc_msg_type_t msg_type, i64 timeout_us)
 
 typedef enum {  q2pc_request_success, q2pc_request_fail, q2pc_commit_success, q2pc_commit_fail, q2pc_cluster_fail } q2pc_commit_status_t;
 
-void wait_for_votes(i64 client_count, i64 timeout_us)
+void wait_for_votes(i64 timeout_us)
 {
     struct timeval ts_start = {0};
     struct timeval ts_now   = {0};
@@ -363,7 +303,7 @@ void wait_for_votes(i64 client_count, i64 timeout_us)
 }
 
 
-q2pc_commit_status_t do_phase1(i64 client_count, i64 cluster_timeout_us, i64 rto_timeout_us)
+q2pc_commit_status_t do_phase1(i64 cluster_timeout_us, i64 rto_timeout_us)
 {
 
     q2pc_commit_status_t result = q2pc_request_success;
@@ -379,7 +319,7 @@ q2pc_commit_status_t do_phase1(i64 client_count, i64 cluster_timeout_us, i64 rto
     send_request_reliable(q2pc_request_msg,rto_timeout_us);
 
     //wait for all the responses
-    wait_for_votes(client_count, cluster_timeout_us);
+    wait_for_votes(cluster_timeout_us);
 
     //Stop all the receiver threads
     dopause_all();
@@ -416,7 +356,7 @@ q2pc_commit_status_t do_phase1(i64 client_count, i64 cluster_timeout_us, i64 rto
 }
 
 
-q2pc_commit_status_t do_phase2(q2pc_commit_status_t phase1_status, i64 client_count, i64 cluster_timeout_us, i64 rto_timeout_us)
+q2pc_commit_status_t do_phase2(q2pc_commit_status_t phase1_status, i64 cluster_timeout_us, i64 rto_timeout_us)
 {
 
     //Init the scoreboard
@@ -441,7 +381,7 @@ q2pc_commit_status_t do_phase2(q2pc_commit_status_t phase1_status, i64 client_co
     }
 
     //wait for all the responses
-    wait_for_votes(client_count, cluster_timeout_us);
+    wait_for_votes(cluster_timeout_us);
 
     //Stop all the receiver threads
     dopause_all();
@@ -485,7 +425,7 @@ q2pc_commit_status_t do_phase2(q2pc_commit_status_t phase1_status, i64 client_co
 
 }
 
-void run_server(const i64 thread_count, const i64 client_count , const transport_s* transport, i64 wait_time, i64 report_int, i64 rto_time)
+void run_server(const i64 thread_count, const i64 client_count,  const transport_s* transport, i64 wait_time, i64 report_int, i64 rto_time)
 {
     //Set up all the threads, scoreboard, transport connections etc.
     server_init(thread_count, client_count, transport);
@@ -517,8 +457,8 @@ void run_server(const i64 thread_count, const i64 client_count , const transport
 
 
         q2pc_commit_status_t status;
-        status = do_phase1(client_count, wait_time, rto_time);
-        status = do_phase2(status,client_count, wait_time, rto_time);
+        status = do_phase1(wait_time, rto_time);
+        status = do_phase2(status, wait_time, rto_time);
 
         switch(status){
             case q2pc_cluster_fail:     cleanup(); ch_log_fatal("Cluster failed\n"); break;
