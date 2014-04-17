@@ -377,13 +377,12 @@ static void init(q2pc_udp_priv* priv)
         ch_log_fatal("UDP set reuse address failed: %s\n",strerror(errno));
     }
 
+    ch_log_debug2("Connecting to IP:port = name=%s:%i\n", priv->transport.bcast, priv->transport.port);
     struct sockaddr_in addr;
     memset(&addr,0,sizeof(addr));
-
     addr.sin_family      = AF_INET;
     addr.sin_addr.s_addr = inet_addr(priv->transport.bcast);
     addr.sin_port        = htons(priv->transport.port);
-
     if(connect(priv->fd, (struct sockaddr *)&addr, sizeof(addr)) ){
         ch_log_fatal("UDP connect failed on fd=%i - %s\n",priv->fd,strerror(errno));
     }
