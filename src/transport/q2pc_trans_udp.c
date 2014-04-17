@@ -377,6 +377,11 @@ static void init(q2pc_udp_priv* priv)
         ch_log_fatal("UDP set reuse address failed: %s\n",strerror(errno));
     }
 
+    int broadcastEnable=1;
+    if( setsockopt(priv->fd, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, sizeof(broadcastEnable)) ){
+        ch_log_fatal("Could not set broadcast on fd=%i: %s\n",priv->fd,strerror(errno));
+    }
+
     ch_log_debug2("Connecting to IP:port = name=%s:%i\n", priv->transport.bcast, priv->transport.port);
     struct sockaddr_in addr;
     memset(&addr,0,sizeof(addr));
@@ -391,11 +396,6 @@ static void init(q2pc_udp_priv* priv)
     flags |= O_NONBLOCK;
     if( fcntl(priv->fd, F_SETFL, flags) == -1){
         ch_log_fatal("Could not set non-blocking on fd=%i: %s\n",priv->fd,strerror(errno));
-    }
-
-    int broadcastEnable=1;
-    if( setsockopt(priv->fd, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, sizeof(broadcastEnable)) ){
-        ch_log_fatal("Could not set broadcast on fd=%i: %s\n",priv->fd,strerror(errno));
     }
 
     ch_log_debug2("Binding to interface name=%s\n", priv->transport.iface);
