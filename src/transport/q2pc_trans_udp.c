@@ -16,9 +16,11 @@
 #include <arpa/inet.h>
 #include <sys/types.h>
 #include <netinet/in.h>
+#include <net/if.h>
 #include <sys/socket.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stdio.h>
 
 #include "q2pc_trans_udp.h"
 #include "conn_vector.h"
@@ -389,14 +391,20 @@ static void init(q2pc_udp_priv* priv)
     int flags = 0;
     flags |= O_NONBLOCK;
     if( fcntl(priv->fd, F_SETFL, flags) == -1){
-        ch_log_fatal("Could not set non-blocking on fd=%i: %s\n",priv->write_all_buffer,strerror(errno));
+        ch_log_fatal("Could not set non-blocking on fd=%i: %s\n",priv->fd,strerror(errno));
     }
 
     int broadcastEnable=1;
     if( setsockopt(priv->fd, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, sizeof(broadcastEnable)) ){
-        ch_log_fatal("Could not set broadcast on fd=%i: %s\n",priv->write_all_buffer,strerror(errno));
+        ch_log_fatal("Could not set broadcast on fd=%i: %s\n",priv->fd,strerror(errno));
     }
 
+    struct ifreq ifr;
+    memset(&ifr, 0, sizeof(ifr));
+    snprintf(ifr.ifr_name, sizeof(ifr.ifr_name), "%s", priv->transport.iface );
+    if( setsockopt(priv->fd, SOL_SOCKET, SO_BINDTODEVICE, (void *)&ifr, sizeof(ifr)) ){
+        ch_log_fatal("Could not set interface on fd=%i: %s\n",priv->fd,strerror(errno));
+    }
 
     priv->connections++;
 

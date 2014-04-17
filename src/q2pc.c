@@ -30,6 +30,7 @@ static struct {
 	i64 port;
 	i64 qjump_epoch;
 	i64 qjump_psize;
+	char* iface;
 
 	//Logging options
 	bool log_no_colour;
@@ -66,9 +67,9 @@ int main(int argc, char** argv)
     //Qjump Transport options
     ch_opt_addii(CH_OPTION_OPTIONAL,'p',"port","Port to use for all transports", &options.port, 7331);
     ch_opt_addsi(CH_OPTION_OPTIONAL,'B',"broadcast","The broadcast IP address to use in UDP mode ini x.x.x.x format", &options.bcast, "127.0.0.0");
-    ch_opt_addii(CH_OPTION_OPTIONAL, 'E',"qjump-epoch", "The Q-Jump epoch in microseconds", &options.qjump_epoch, 100 );
-    ch_opt_addii(CH_OPTION_OPTIONAL, 'P',"qjump-psize", "The Q-Jump packet size in bytes", &options.qjump_psize, 64 );
-
+    ch_opt_addii(CH_OPTION_OPTIONAL,'E',"qjump-epoch", "The Q-Jump epoch in microseconds", &options.qjump_epoch, 100 );
+    ch_opt_addii(CH_OPTION_OPTIONAL,'P',"qjump-psize", "The Q-Jump packet size in bytes", &options.qjump_psize, 64 );
+    ch_opt_addsi(CH_OPTION_OPTIONAL,'i',"iface","The interface name to use", &options.iface, "eth4");
     //Q2PC Logging
     ch_opt_addbi(CH_OPTION_FLAG,     'n', "no-colour",  "Turn off colour log output",     &options.log_no_colour, false);
     ch_opt_addbi(CH_OPTION_FLAG,     '0', "log-stdout", "Log to standard out", 	 	&options.log_stdout, 	false);
