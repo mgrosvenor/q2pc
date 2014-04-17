@@ -60,6 +60,7 @@ int main(int argc, char** argv)
     //Transports
     ch_opt_addbi(CH_OPTION_FLAG,    'u',"udp-ln","Use Linux based UDP transport [default]", &options.trans_udp_ln, false);
     ch_opt_addbi(CH_OPTION_FLAG,    't',"tcp-ln","Use Linux based TCP transport", &options.trans_tcp_ln, false);
+    ch_opt_addbi(CH_OPTION_FLAG,    'r',"rdp-ln","Use Linux based UDP transport with reliability", &options.trans_tcp_ln, false);
     ch_opt_addbi(CH_OPTION_FLAG,    'U',"udp-nm","Use NetMap based UDP transport", &options.trans_udp_nm, false);
     ch_opt_addbi(CH_OPTION_FLAG,    'R',"rdp-nm","Use NetMap based RDP transport", &options.trans_rdp_nm, false);
     ch_opt_addbi(CH_OPTION_FLAG,    'Q',"udp-qj","Use NetMap based UDP transport over Q-Jump", &options.trans_udp_qj, false);

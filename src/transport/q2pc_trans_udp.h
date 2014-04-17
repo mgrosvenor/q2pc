@@ -10,6 +10,6 @@
 
 #include "q2pc_transport.h"
 
-q2pc_trans* q2pc_tcp_construct(const transport_s* transport);
+q2pc_trans* q2pc_udp_construct(const transport_s* transport);
 
 #endif /* Q2PC_TRANS_UDP_H_ */
