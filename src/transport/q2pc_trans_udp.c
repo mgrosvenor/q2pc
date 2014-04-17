@@ -399,6 +399,7 @@ static void init(q2pc_udp_priv* priv)
         ch_log_fatal("Could not set broadcast on fd=%i: %s\n",priv->fd,strerror(errno));
     }
 
+    ch_log_debug2("Binding to interface name=%s\n", priv->transport.iface);
     struct ifreq ifr;
     memset(&ifr, 0, sizeof(ifr));
     snprintf(ifr.ifr_name, sizeof(ifr.ifr_name), "%s", priv->transport.iface );
