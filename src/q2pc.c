@@ -65,7 +65,7 @@ int main(int argc, char** argv)
 
     //Qjump Transport options
     ch_opt_addii(CH_OPTION_OPTIONAL,'p',"port","Port to use for all transports", &options.port, 7331);
-    ch_opt_addsi(CH_OPTION_OPTIONAL,'B',"broadcast","The broadcast IP address to use in UDP mode ini x.x.x.x format", &options.bcast, "127.255.255.255");
+    ch_opt_addsi(CH_OPTION_OPTIONAL,'B',"broadcast","The broadcast IP address to use in UDP mode ini x.x.x.x format", &options.bcast, "127.0.0.0");
     ch_opt_addii(CH_OPTION_OPTIONAL, 'E',"qjump-epoch", "The Q-Jump epoch in microseconds", &options.qjump_epoch, 100 );
     ch_opt_addii(CH_OPTION_OPTIONAL, 'P',"qjump-psize", "The Q-Jump packet size in bytes", &options.qjump_psize, 64 );
 

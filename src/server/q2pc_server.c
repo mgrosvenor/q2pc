@@ -110,6 +110,8 @@ void do_connectall(i64 client_count)
                     ch_log_fatal("Unexpected message of type %i\n", msg->type);
             }
 
+            ch_log_debug3("Connection from %i at index %i\n", msg->src_hostid, i);
+
             conn->end_read(conn);
         }
     }
@@ -215,13 +217,13 @@ void* run_thread( void* p)
             q2pc_msg* msg = (q2pc_msg*)data;
             //Bounds check the answer
 
-            if(msg->src_hostid < 0 || msg->src_hostid > count){
-                ch_log_warn("Client ID (%li) is out of the expected range [%i,%i]. Ignoring vote\n", msg->src_hostid, 0, count);
+            if(msg->src_hostid < 1 || msg->src_hostid > count){
+                ch_log_warn("Client ID (%li) is out of the expected range [%i,%i]. Ignoring vote\n", msg->src_hostid, 1, count);
                 con->end_read(con);
                 continue;
             }
 
-            votes_scoreboard[msg->src_hostid] = msg->type;
+            votes_scoreboard[msg->src_hostid - 1] = msg->type;
             switch(msg->type){
                 case q2pc_vote_yes_msg: ch_log_debug2("Q2PC Server: [%i]<-- vote yes from (%li)\n", thread_id, msg->src_hostid); break;
                 case q2pc_vote_no_msg:  ch_log_debug2("Q2PC Server: [%i]<-- vote no  from (%li)\n", thread_id, msg->src_hostid); break;

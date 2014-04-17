@@ -61,8 +61,9 @@ static void init(const transport_s* transport)
             ch_log_fatal("Message buffer is smaller than Q2PC message needs be. (%li<%li)\n", len, sizeof(q2pc_msg));
         }
 
-        q2pc_msg* msg = (q2pc_msg*)data;
-        msg->type = q2pc_con_msg;
+        q2pc_msg* msg   = (q2pc_msg*)data;
+        msg->type       = q2pc_con_msg;
+        msg->src_hostid = transport->client_id;
 
         conn.end_write(&conn, sizeof(q2pc_msg));
         connected = true;
@@ -90,6 +91,7 @@ static q2pc_msg* get_messge(i64 wait_usecs)
     ts_start_us = ts_start.tv_sec * 1000 * 1000 + ts_start.tv_usec;
 
 
+    ch_log_debug3("Waiting for new requests...\n");
     while(result == Q2PC_EAGAIN){
         result = conn.beg_read(&conn,&data, &len);
 

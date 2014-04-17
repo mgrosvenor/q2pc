@@ -26,7 +26,8 @@
 #include "../protocol/q2pc_protocol.h"
 
 typedef struct {
-    int fd;
+    int wr_fd; //Writing file descriptor
+    int rd_fd; //Reading file descriptor
 
     //For the reader
     void* read_buffer;
@@ -49,13 +50,13 @@ static int conn_beg_read(struct q2pc_trans_conn_s* this, char** data_o, i64* len
         return Q2PC_ENONE;
     }
 
-    int result = read(priv->fd, priv->read_buffer, priv->read_buffer_size);
+    int result = read(priv->rd_fd, priv->read_buffer, priv->read_buffer_size);
     if(result < 0){
         if(errno == EAGAIN || errno == EWOULDBLOCK){
             return Q2PC_EAGAIN; //Reading would have blocked, we don't want this
         }
 
-        ch_log_fatal("udp read failed on fd=%i - %s\n",priv->fd,strerror(errno));
+        ch_log_fatal("udp read failed on fd=%i - %s\n",priv->rd_fd,strerror(errno));
     }
 
     if(result == 0){
@@ -66,6 +67,8 @@ static int conn_beg_read(struct q2pc_trans_conn_s* this, char** data_o, i64* len
 
     *data_o = priv->read_buffer;
     *len_o  = priv->read_buffer_used;
+    ch_log_debug3("Got %li bytes\n", priv->read_buffer_used);
+
 
     return Q2PC_ENONE;
 }
@@ -98,7 +101,7 @@ static int conn_end_write(struct q2pc_trans_conn_s* this, i64 len)
     }
 
     while(len > 0){
-        i64 written =  write(priv->fd, data ,len);
+        i64 written =  write(priv->wr_fd, data ,len);
         if(written < 0){
             ch_log_fatal("UDP write failed: %s\n",strerror(errno));
         }
@@ -247,7 +250,7 @@ static void safe_wait_bind(int fd, struct sockaddr_in* addr)
         for(i = 0; i < seconds_total / seconds_per_try && errno == EADDRINUSE; i++){
             ch_log_debug1("%i] %s --> sleeping for %i seconds...\n",i, strerror(errno), seconds_per_try);
             sleep(seconds_per_try);
-            bind(fd, (struct sockaddr *)&addr, sizeof(addr));
+            bind(fd, (struct sockaddr *)addr, sizeof(struct sockaddr_in));
         }
 
         if(errno){
@@ -272,20 +275,9 @@ static int doconnect(struct q2pc_trans_s* this, q2pc_trans_conn* conn)
 
         q2pc_udp_conn_priv* new_priv = init_new_conn(conn);
 
-        new_priv->fd = socket(AF_INET,SOCK_DGRAM,0);
-        if (new_priv->fd < 0 ){
+        int sock_fd = socket(AF_INET,SOCK_DGRAM,0);
+        if (sock_fd < 0 ){
             ch_log_fatal("Could not create UDP socket (%s)\n", strerror(errno));
-        }
-
-        int reuse_opt = 1;
-        if(setsockopt(new_priv->fd, SOL_SOCKET, SO_REUSEADDR, &reuse_opt, sizeof(int)) < 0) {
-            ch_log_fatal("UDP set reuse address failed: %s\n",strerror(errno));
-        }
-
-        int flags = 0;
-        flags |= O_NONBLOCK;
-        if( fcntl(new_priv->fd, F_SETFL, flags) == -1){
-            ch_log_fatal("Could not set non-blocking on fd=%i: %s\n",new_priv->fd,strerror(errno));
         }
 
 
@@ -297,7 +289,11 @@ static int doconnect(struct q2pc_trans_s* this, q2pc_trans_conn* conn)
             addr.sin_family      = AF_INET;
             addr.sin_addr.s_addr = INADDR_ANY;
             addr.sin_port        = htons(trans_priv->transport.port + trans_priv->connections);
-            safe_wait_bind(new_priv->fd,&addr);
+            safe_wait_bind(sock_fd,&addr);
+
+            //Read an write FDs are the same
+            new_priv->rd_fd = sock_fd;
+            new_priv->wr_fd = sock_fd;
         }
         else{
 
@@ -305,13 +301,30 @@ static int doconnect(struct q2pc_trans_s* this, q2pc_trans_conn* conn)
             addr.sin_family      = AF_INET;
             addr.sin_addr.s_addr = INADDR_ANY;
             addr.sin_port        = htons(trans_priv->transport.port);
-            safe_wait_bind(new_priv->fd,&addr);
+            safe_wait_bind(sock_fd,&addr);
+            new_priv->rd_fd = sock_fd;
+
+            int sock_wr_fd = socket(AF_INET,SOCK_DGRAM,0);
+            if (sock_wr_fd < 0 ){
+                ch_log_fatal("Could not create UDP writer socket (%s)\n", strerror(errno));
+            }
 
             //Send to the server on the server port
             addr.sin_addr.s_addr = inet_addr(trans_priv->transport.ip);
             addr.sin_port        = htons(trans_priv->transport.port + trans_priv->transport.client_id);
-            safe_connect(new_priv->fd,&addr);
+            safe_connect(sock_wr_fd,&addr);
+            new_priv->wr_fd = sock_wr_fd;
+        }
 
+        int reuse_opt = 1;
+        if(setsockopt(new_priv->rd_fd, SOL_SOCKET, SO_REUSEADDR, &reuse_opt, sizeof(int)) < 0) {
+            ch_log_fatal("UDP set reuse address failed: %s\n",strerror(errno));
+        }
+
+        int flags = 0;
+        flags |= O_NONBLOCK;
+        if( fcntl(new_priv->rd_fd, F_SETFL, flags) == -1){
+            ch_log_fatal("Could not set non-blocking on fd=%i: %s\n",new_priv->rd_fd,strerror(errno));
         }
 
         conn->priv = new_priv;
