@@ -86,7 +86,7 @@ static int conn_end_read(struct q2pc_trans_conn_s* this)
 {
     q2pc_tcp_conn_priv* priv = (q2pc_tcp_conn_priv*)this->priv;
     priv->read_buffer_used = 0;
-    return 0;
+    return Q2PC_ENONE;
 }
 
 static int conn_beg_delimit(struct q2pc_trans_conn_s* this, char** data_o, i64* len_o)
@@ -255,14 +255,15 @@ static int conn_end_write(struct q2pc_trans_conn_s* this, i64 len)
     while(len > 0){
         i64 written =  write(priv->fd, data ,len);
         if(written < 0){
-            ch_log_fatal("TCP write failed: %s\n",strerror(errno));
+            ch_log_warn("TCP write failed: %s\n",strerror(errno));
+            return Q2PC_EFIN;
         }
 
         data += written;
         len -= written;
     }
 
-    return 0;
+    return Q2PC_ENONE;
 
 }
 
@@ -340,11 +341,13 @@ static int end_write_all(struct q2pc_trans_s* this, i64 msg_len)
         memcpy(data,priv->write_all_buffer, msg_len);
 
         //Commit it
-        conn->end_write(conn, msg_len);
+        if(conn->end_write(conn, msg_len)){
+            return Q2PC_EFIN;
+        }
 
     }
 
-    return 0;
+    return Q2PC_ENONE;
 
 }
 

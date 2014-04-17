@@ -42,6 +42,7 @@ static struct {
 
 	//General
 	i64 waittime;
+	i64 rto;
 	i64 report_int;
 
 } options;
@@ -73,14 +74,15 @@ int main(int argc, char** argv)
     ch_opt_addsi(CH_OPTION_OPTIONAL,'i',"iface","The interface name to use", &options.iface, "eth4");
     //Q2PC Logging
     ch_opt_addbi(CH_OPTION_FLAG,     'n', "no-colour",  "Turn off colour log output",     &options.log_no_colour, false);
-    ch_opt_addbi(CH_OPTION_FLAG,     '0', "log-stdout", "Log to standard out", 	 	&options.log_stdout, 	false);
-    ch_opt_addbi(CH_OPTION_FLAG,     '1', "log-stderr", "Log to standard error [default]", 	&options.log_stderr, 	false);
-    ch_opt_addbi(CH_OPTION_FLAG,     'S', "log-syslog", "Log to system log",         &options.log_syslog,	false);
-    ch_opt_addsi(CH_OPTION_OPTIONAL, 'F', "log-file",   "Log to the file supplied",	&options.log_filename, 	NULL);
+//    ch_opt_addbi(CH_OPTION_FLAG,     '0', "log-stdout", "Log to standard out", 	 	&options.log_stdout, 	false);
+//    ch_opt_addbi(CH_OPTION_FLAG,     '1', "log-stderr", "Log to standard error [default]", 	&options.log_stderr, 	false);
+//    ch_opt_addbi(CH_OPTION_FLAG,     'S', "log-syslog", "Log to system log",         &options.log_syslog,	false);
+//    ch_opt_addsi(CH_OPTION_OPTIONAL, 'F', "log-file",   "Log to the file supplied",	&options.log_filename, 	NULL);
     ch_opt_addii(CH_OPTION_OPTIONAL, 'v', "log-level",  "Log level verbosity (0 = lowest, 6 = highest)",  &options.log_verbosity, CH_LOG_LVL_INFO);
 
     ch_opt_addii(CH_OPTION_OPTIONAL, 'w',"wait","How long to wait for client/server delay (us)", &options.waittime, 2000 * 1000);
-    ch_opt_addii(CH_OPTION_OPTIONAL, 'r',"report", "reporting interval for statistics", &options.report_int, 100);
+    ch_opt_addii(CH_OPTION_OPTIONAL, 'o',"rto", "How long to wait before retransmitting a request", &options.rto, 200 * 1000);
+    ch_opt_addii(CH_OPTION_OPTIONAL, 'S',"stats", "reporting interval for statistics", &options.report_int, 100);
     //Parse it all up
     ch_opt_parse(argc,argv);
 
@@ -184,7 +186,7 @@ int main(int argc, char** argv)
         run_client(&transport, options.client_id, options.waittime);
     }
     else{
-        run_server(options.threads, options.server,&transport, options.waittime, options.report_int);
+        run_server(options.threads, options.server,&transport, options.waittime, options.report_int, options.rto);
     }
 
     return 0;

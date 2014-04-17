@@ -105,13 +105,14 @@ static int conn_end_write(struct q2pc_trans_conn_s* this, i64 len)
     while(len > 0){
         i64 written =  write(priv->wr_fd, data ,len);
         if(written < 0){
-            ch_log_fatal("UDP write failed: %s\n",strerror(errno));
+            ch_log_warn("UDP write failed: %s\n",strerror(errno));
+            return Q2PC_EFIN;
         }
         data += written;
         len -= written;
     }
 
-    return 0;
+    return Q2PC_EFIN;
 
 }
 
@@ -177,13 +178,14 @@ static int end_write_all(struct q2pc_trans_s* this, i64 msg_len)
     while(msg_len > 0){
         i64 written =  write(priv->fd, data, msg_len);
         if(written < 0){
-            ch_log_fatal("UDP write all failed: %s\n",strerror(errno));
+            ch_log_warn("UDP write all failed: %s\n",strerror(errno));
+            return Q2PC_EFIN;
         }
         data    += written;
         msg_len -= written;
     }
 
-    return 0;
+    return Q2PC_ENONE;
 
 }
 
@@ -403,7 +405,7 @@ static void init(q2pc_udp_priv* priv)
     memset(&ifr, 0, sizeof(ifr));
     snprintf(ifr.ifr_name, sizeof(ifr.ifr_name), "%s", priv->transport.iface );
     if( setsockopt(priv->fd, SOL_SOCKET, SO_BINDTODEVICE, (void *)&ifr, sizeof(ifr)) ){
-        ch_log_fatal("Could not set interface on fd=%i: %s\n",priv->fd,strerror(errno));
+        ch_log_fatal("Could not set interface to %s on fd=%i: %s\n",priv->transport.iface, priv->fd,strerror(errno));
     }
 
     priv->connections++;

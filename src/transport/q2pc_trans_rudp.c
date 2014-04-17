@@ -32,12 +32,12 @@ typedef struct {
     int rd_fd; //Reading file descriptor
 
     //For the reader
-    void* read_buffer;
+    char* read_buffer;
     i64   read_buffer_used;
     i64   read_buffer_size;
 
     //For the writer
-    void* write_buffer;
+    char* write_buffer;
     i64   write_buffer_used;
     i64   write_buffer_size;
 
@@ -66,10 +66,9 @@ static int conn_beg_read(struct q2pc_trans_conn_s* this, char** data_o, i64* len
     }
 
     priv->read_buffer_used = result;
-
     *data_o = priv->read_buffer;
     *len_o  = priv->read_buffer_used;
-    ch_log_debug3("Got %li bytes\n", priv->read_buffer_used);
+    ch_log_debug3("Got %li bytes\n", *len_o);
 
 
     return Q2PC_ENONE;
@@ -96,7 +95,7 @@ static int conn_beg_write(struct q2pc_trans_conn_s* this, char** data_o, i64* le
 static int conn_end_write(struct q2pc_trans_conn_s* this, i64 len)
 {
     q2pc_rudp_conn_priv* priv = (q2pc_rudp_conn_priv*)this->priv;
-    char* data = priv->write_buffer;
+    char*   data = priv->write_buffer;
 
     if(len > priv->write_buffer_size){
         ch_log_fatal("Error: Wrote more data than the buffer could handle. Memory corruption is likely\n ");
@@ -172,7 +171,8 @@ static int end_write_all(struct q2pc_trans_s* this, i64 msg_len)
         ch_log_fatal("Error: Wrote more data than the buffer could handle. Memory corruption is likely\n ");
     }
 
-    char* data = priv->write_all_buffer;
+    char*   data = priv->write_all_buffer;
+
 
     while(msg_len > 0){
         i64 written =  write(priv->fd, data, msg_len);
@@ -182,6 +182,7 @@ static int end_write_all(struct q2pc_trans_s* this, i64 msg_len)
         data    += written;
         msg_len -= written;
     }
+
 
     return 0;
 
