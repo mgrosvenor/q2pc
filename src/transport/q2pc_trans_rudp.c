@@ -21,6 +21,8 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
+#include <pthread.h>
+#include <sys/time.h>
 
 #include "q2pc_trans_rudp.h"
 #include "q2pc_trans_udp.h"
@@ -36,6 +38,8 @@ typedef struct {
     char* read_data;
     i64 read_data_len;
 
+    pthread_mutex_t mutex;
+
 } q2pc_rudp_conn_priv;
 
 
@@ -45,11 +49,13 @@ typedef struct {
 static int conn_beg_read(struct q2pc_trans_conn_s* this, char** data_o, i64* len_o)
 {
     q2pc_rudp_conn_priv* priv = (q2pc_rudp_conn_priv*)this->priv;
+    pthread_mutex_lock(&priv->mutex);
 
     //There is already data waiting, so exit early
     if(priv->read_data && priv->read_data_len){
         (*data_o) = priv->read_data     + sizeof(priv->seq_no);
         (*len_o)  = priv->read_data_len - sizeof(priv->seq_no);
+        pthread_mutex_unlock(&priv->mutex);
         return Q2PC_ENONE;
     }
 
@@ -60,41 +66,47 @@ static int conn_beg_read(struct q2pc_trans_conn_s* this, char** data_o, i64* len
         priv->read_data     = NULL;
         priv->read_data_len = 0;
 
-
         if(result != Q2PC_EAGAIN){
             ch_log_warn("Base stream returned error %li\n", result);
         }
+
+        //ch_log_warn("No data exit\n");
+        pthread_mutex_unlock(&priv->mutex);
         return result;
     }
 
     i64 seq_no = *(i64*)(priv->read_data);
     if(priv->is_server){
-        ch_log_info("Server got message with seq_no=%li\n", seq_no);
+        ch_log_debug3("Server got message with seq_no=%li\n", seq_no);
         if(seq_no != priv->seq_no){
-            ch_log_info("Server dropping message with seq_no %li != %li\n", seq_no, priv->seq_no);
+            ch_log_warn("Server dropping message with seq_no %li != %li\n", seq_no, priv->seq_no);
+            pthread_mutex_unlock(&priv->mutex);
             return Q2PC_EAGAIN;
         }
 
+        ch_log_debug3("Seq no is now %li --> %li\n", priv->seq_no, priv->seq_no + 1);
         priv->seq_no++;
         BARRIER(); //Make this thread safe so that every one sees this update
-        ch_log_debug3("Seq no is now %li\n", priv->seq_no);
     }
     else{
-        ch_log_info("Client got message with seq_no=%li\n", seq_no);
+        ch_log_debug3("Client got message with seq_no=%li\n", seq_no);
 
         if(seq_no <= priv->seq_no){
-            ch_log_info("Client dropping message with seq_no=%li <= %li\n", seq_no, priv->seq_no);
+            ch_log_warn("Client dropping message with seq_no=%li <= %li\n", seq_no, priv->seq_no);
+            pthread_mutex_unlock(&priv->mutex);
             return Q2PC_EAGAIN;
         }
 
+        ch_log_debug3("Seq no is now %li --> %li\n", priv->seq_no, seq_no);
         priv->seq_no = seq_no;
         BARRIER(); //Make this thread safe so that every one sees this update
-        ch_log_debug3("Seq no is now %li\n", priv->seq_no);
+
     }
 
     (*data_o) = priv->read_data     + sizeof(priv->seq_no);
     (*len_o)  = priv->read_data_len - sizeof(priv->seq_no);
 
+    pthread_mutex_unlock(&priv->mutex);
     return Q2PC_ENONE;
 
 
@@ -126,10 +138,10 @@ static int conn_beg_write(struct q2pc_trans_conn_s* this, char** data_o, i64* le
     *seq_no = priv->seq_no;
 
     if(priv->is_server){
-        ch_log_info("Server made message with seq_no=%li\n", *seq_no);
+        ch_log_debug3("Server made message with seq_no=%li\n", *seq_no);
     }
     else{
-        ch_log_info("Client made message with seq_no=%li\n", *seq_no);
+        ch_log_debug3("Client made message with seq_no=%li\n", *seq_no);
     }
 
 
@@ -144,7 +156,7 @@ static int conn_end_write(struct q2pc_trans_conn_s* this, i64 len)
 {
     q2pc_rudp_conn_priv* priv = (q2pc_rudp_conn_priv*)this->priv;
 
-   // const i64 current_seq = priv->seq_no;
+   const i64 current_seq = priv->seq_no;
 
     int result = priv->base.end_write(&priv->base, len + sizeof(priv->seq_no));
 
@@ -155,18 +167,45 @@ static int conn_end_write(struct q2pc_trans_conn_s* this, i64 len)
 
     char* rd_data;
     i64 rd_len;
+    struct timeval ts_start = {0};
+    struct timeval ts_now   = {0};
+    i64 ts_start_us         = 0;
+    i64 ts_now_us           = 0;
+    gettimeofday(&ts_start, NULL);
+    ts_start_us = ts_start.tv_sec * 1000 * 1000 + ts_start.tv_usec;
+    int timeout_us = 200 * 1000;
+
+
     conn_beg_read(this,&rd_data,&rd_len); //Try to stimulate a a seq_no change
-//    while( current_seq == priv->seq_no){
-//        usleep(200000);
-//
-//        int result = priv->base.end_write(&priv->base, len + sizeof(priv->seq_no));
-//        if(result){
-//            ch_log_warn("Base stream returned error %li\n", result);
-//            return result;
-//        }
-//
-//        conn_beg_read(this,&rd_data,&rd_len); //Try to stimulate a a seq_no change
-//    }
+    int rto = 0;
+    for(rto = 0; rto < 20;){
+
+        if(current_seq != priv->seq_no){
+            ch_log_debug3("Got ack for seq=%li\n", current_seq);
+            break;
+        }
+
+        conn_beg_read(this,&rd_data,&rd_len); //Try to stimulate a a seq_no change
+
+        gettimeofday(&ts_now, NULL);
+        ts_now_us = ts_now.tv_sec * 1000 * 1000 + ts_now.tv_usec;
+        if(ts_now_us < ts_start_us + timeout_us){
+             continue; //Busy loop until the timeout fires
+        }
+
+        gettimeofday(&ts_start, NULL);
+        ts_start_us = ts_start.tv_sec * 1000 * 1000 + ts_start.tv_usec;
+
+        ch_log_warn("Retransmit timeout fired\n");
+        result = priv->base.end_write(&priv->base, len + sizeof(priv->seq_no));
+        if(result){
+            ch_log_warn("Base stream returned error %li\n", result);
+            return result;
+        }
+
+        rto++;
+
+    }
 
 
     return result;
@@ -229,6 +268,7 @@ static int doconnect(struct q2pc_trans_s* this, q2pc_trans_conn* conn)
         conn_priv            = init_new_conn(conn);
         conn_priv->is_server = !trans_priv->transport.server;
         conn_priv->seq_no    = conn_priv->is_server ? 0 : -1; //Set to -1 for clients
+        pthread_mutex_init(&conn_priv->mutex,NULL);
 
         conn->priv           = conn_priv;
 

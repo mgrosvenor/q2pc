@@ -60,7 +60,7 @@ void* run_thread( void* p)
             i64 len = 0;
             i64 result = con->beg_read(con,&data, &len);
             if(result != Q2PC_ENONE){
-                con->end_read(con);
+                //con->end_read(con);
                 continue;
             }
 
@@ -69,7 +69,7 @@ void* run_thread( void* p)
 
             if(msg->src_hostid < 1 || msg->src_hostid > count){
                 ch_log_warn("Client ID (%li) is out of the expected range [%i,%i]. Ignoring vote\n", msg->src_hostid, 1, count);
-                con->end_read(con);
+                //con->end_read(con);
                 continue;
             }
 
