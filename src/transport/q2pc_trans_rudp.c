@@ -49,13 +49,13 @@ typedef struct {
 static int conn_beg_read(struct q2pc_trans_conn_s* this, char** data_o, i64* len_o)
 {
     q2pc_rudp_conn_priv* priv = (q2pc_rudp_conn_priv*)this->priv;
-    pthread_mutex_lock(&priv->mutex);
+    //pthread_mutex_lock(&priv->mutex);
 
     //There is already data waiting, so exit early
     if(priv->read_data && priv->read_data_len){
         (*data_o) = priv->read_data + sizeof(priv->seq_no);
         (*len_o)  = priv->read_data_len - sizeof(priv->seq_no);
-        pthread_mutex_unlock(&priv->mutex);
+        //pthread_mutex_unlock(&priv->mutex);
         return Q2PC_ENONE;
     }
 
@@ -67,7 +67,7 @@ static int conn_beg_read(struct q2pc_trans_conn_s* this, char** data_o, i64* len
 
         //ch_log_warn("No data exit\n");
         priv->base.end_read(&priv->base);
-        pthread_mutex_unlock(&priv->mutex);
+        //pthread_mutex_unlock(&priv->mutex);
         return result;
     }
 
@@ -78,7 +78,7 @@ static int conn_beg_read(struct q2pc_trans_conn_s* this, char** data_o, i64* len
         if(seq_no != priv->seq_no){
             ch_log_warn("Server dropping message with seq_no %li != %li\n", seq_no, priv->seq_no);
             priv->base.end_read(&priv->base);
-            pthread_mutex_unlock(&priv->mutex);
+            //pthread_mutex_unlock(&priv->mutex);
             return Q2PC_EAGAIN;
         }
 
@@ -92,7 +92,7 @@ static int conn_beg_read(struct q2pc_trans_conn_s* this, char** data_o, i64* len
         if(seq_no <= priv->seq_no){
             ch_log_warn("Client dropping message with seq_no=%li <= %li\n", seq_no, priv->seq_no);
             priv->base.end_read(&priv->base);
-            pthread_mutex_unlock(&priv->mutex);
+            //pthread_mutex_unlock(&priv->mutex);
             return Q2PC_EAGAIN;
         }
 
@@ -108,7 +108,7 @@ static int conn_beg_read(struct q2pc_trans_conn_s* this, char** data_o, i64* len
     (*data_o) = priv->read_data + sizeof(priv->seq_no);
     (*len_o)  = priv->read_data_len - sizeof(priv->seq_no);
 
-    pthread_mutex_unlock(&priv->mutex);
+    //pthread_mutex_unlock(&priv->mutex);
     return Q2PC_ENONE;
 
 
@@ -178,7 +178,7 @@ static int conn_end_write(struct q2pc_trans_conn_s* this, i64 len)
     int timeout_us = 200 * 1000;
 
     const int max_retires = 20;
-    conn_beg_read(this,&rd_data,&rd_len); //Try to stimulate a a seq_no change
+    if(priv->is_server) { conn_beg_read(this,&rd_data,&rd_len); }//Try to stimulate a a seq_no change
     int rto = 0;
     for(rto = 0; rto < max_retires;){
 
@@ -187,7 +187,7 @@ static int conn_end_write(struct q2pc_trans_conn_s* this, i64 len)
             break;
         }
 
-        conn_beg_read(this,&rd_data,&rd_len); //Try to stimulate a a seq_no change
+        if(priv->is_server) { conn_beg_read(this,&rd_data,&rd_len);} //Try to stimulate a a seq_no change
 
         gettimeofday(&ts_now, NULL);
         ts_now_us = ts_now.tv_sec * 1000 * 1000 + ts_now.tv_usec;
