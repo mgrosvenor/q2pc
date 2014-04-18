@@ -144,7 +144,7 @@ static int conn_end_write(struct q2pc_trans_conn_s* this, i64 len)
 {
     q2pc_rudp_conn_priv* priv = (q2pc_rudp_conn_priv*)this->priv;
 
-    const i64 current_seq = priv->seq_no;
+   // const i64 current_seq = priv->seq_no;
 
     int result = priv->base.end_write(&priv->base, len + sizeof(priv->seq_no));
 
@@ -156,17 +156,17 @@ static int conn_end_write(struct q2pc_trans_conn_s* this, i64 len)
     char* rd_data;
     i64 rd_len;
     conn_beg_read(this,&rd_data,&rd_len); //Try to stimulate a a seq_no change
-    while( current_seq == priv->seq_no){
-        usleep(200000);
-
-        int result = priv->base.end_write(&priv->base, len + sizeof(priv->seq_no));
-        if(result){
-            ch_log_warn("Base stream returned error %li\n", result);
-            return result;
-        }
-
-        conn_beg_read(this,&rd_data,&rd_len); //Try to stimulate a a seq_no change
-    }
+//    while( current_seq == priv->seq_no){
+//        usleep(200000);
+//
+//        int result = priv->base.end_write(&priv->base, len + sizeof(priv->seq_no));
+//        if(result){
+//            ch_log_warn("Base stream returned error %li\n", result);
+//            return result;
+//        }
+//
+//        conn_beg_read(this,&rd_data,&rd_len); //Try to stimulate a a seq_no change
+//    }
 
 
     return result;
