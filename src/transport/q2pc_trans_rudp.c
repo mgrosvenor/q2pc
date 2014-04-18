@@ -23,24 +23,14 @@
 #include <stdio.h>
 
 #include "q2pc_trans_rudp.h"
+#include "q2pc_trans_udp.h"
 #include "conn_vector.h"
 #include "../errors/errors.h"
 #include "../protocol/q2pc_protocol.h"
 
 typedef struct {
-    int wr_fd; //Writing file descriptor
-    int rd_fd; //Reading file descriptor
-
-    //For the reader
-    char* read_buffer;
-    i64   read_buffer_used;
-    i64   read_buffer_size;
-
-    //For the writer
-    char* write_buffer;
-    i64   write_buffer_used;
-    i64   write_buffer_size;
-
+    q2pc_trans_conn base;
+    bool is_server;
 } q2pc_rudp_conn_priv;
 
 
@@ -48,70 +38,27 @@ typedef struct {
 static int conn_beg_read(struct q2pc_trans_conn_s* this, char** data_o, i64* len_o)
 {
     q2pc_rudp_conn_priv* priv = (q2pc_rudp_conn_priv*)this->priv;
-    if( priv->read_buffer && priv->read_buffer_used){
-        return Q2PC_ENONE;
-    }
-
-    int result = read(priv->rd_fd, priv->read_buffer, priv->read_buffer_size);
-    if(result < 0){
-        if(errno == EAGAIN || errno == EWOULDBLOCK){
-            return Q2PC_EAGAIN; //Reading would have blocked, we don't want this
-        }
-
-        ch_log_fatal("rudp read failed on fd=%i - %s\n",priv->rd_fd,strerror(errno));
-    }
-
-    if(result == 0){
-        return Q2PC_EFIN;
-    }
-
-    priv->read_buffer_used = result;
-    *data_o = priv->read_buffer;
-    *len_o  = priv->read_buffer_used;
-    ch_log_debug3("Got %li bytes\n", *len_o);
-
-
-    return Q2PC_ENONE;
+    return priv->base.beg_read(&priv->base,data_o, len_o);
 }
 
 static int conn_end_read(struct q2pc_trans_conn_s* this)
 {
     q2pc_rudp_conn_priv* priv = (q2pc_rudp_conn_priv*)this->priv;
-    priv->read_buffer_used = 0;
-    return 0;
+    return priv->base.end_read(&priv->base);
 }
-
 
 
 static int conn_beg_write(struct q2pc_trans_conn_s* this, char** data_o, i64* len_o)
 {
     q2pc_rudp_conn_priv* priv = (q2pc_rudp_conn_priv*)this->priv;
-    *data_o = priv->write_buffer;
-    *len_o  = priv->write_buffer_size;
-    return 0;
+    return priv->base.beg_write(&priv->base, data_o, len_o);
 }
 
 
 static int conn_end_write(struct q2pc_trans_conn_s* this, i64 len)
 {
     q2pc_rudp_conn_priv* priv = (q2pc_rudp_conn_priv*)this->priv;
-    char*   data = priv->write_buffer;
-
-    if(len > priv->write_buffer_size){
-        ch_log_fatal("Error: Wrote more data than the buffer could handle. Memory corruption is likely\n ");
-    }
-
-    while(len > 0){
-        i64 written =  write(priv->wr_fd, data ,len);
-        if(written < 0){
-            ch_log_fatal("RUDP write failed: %s\n",strerror(errno));
-        }
-        data += written;
-        len -= written;
-    }
-
-    return 0;
-
+    return priv->base.end_write(&priv->base, len);
 }
 
 
@@ -120,8 +67,7 @@ static void conn_delete(struct q2pc_trans_conn_s* this)
     if(this){
         if(this->priv){
             q2pc_rudp_conn_priv* priv = (q2pc_rudp_conn_priv*)this->priv;
-            if(priv->read_buffer){ free(priv->read_buffer); }
-            //if(priv->write_buffer){ free(priv->write_buffer); } --Not necessary since r+w are allocated together
+            priv->base.delete(&priv->base);
             free(this->priv);
         }
 
@@ -137,43 +83,18 @@ static void conn_delete(struct q2pc_trans_conn_s* this)
 typedef struct {
 
     transport_s transport;
-
-    i64 connections;
-
+    q2pc_trans* base;
 } q2pc_rudp_priv;
 
 
 
-
-
 #define BUFF_SIZE (4096 * 1024) //A 4MB buffer. Just because it feels right
-static q2pc_rudp_conn_priv* new_conn_priv()
+static q2pc_rudp_conn_priv* init_new_conn(q2pc_trans_conn* conn)
 {
     q2pc_rudp_conn_priv* new_priv = calloc(1,sizeof(q2pc_rudp_conn_priv));
     if(!new_priv){
         ch_log_fatal("Malloc failed!\n");
     }
-
-    void* read_buff = calloc(2,BUFF_SIZE);
-    if(!read_buff){
-        ch_log_fatal("Malloc failed!\n");
-    }
-    new_priv->read_buffer = read_buff;
-    new_priv->read_buffer_size = BUFF_SIZE;
-
-    void* write_buff = (char*)read_buff + BUFF_SIZE;
-    new_priv->write_buffer = write_buff;
-    new_priv->write_buffer_size = BUFF_SIZE;
-
-
-    return new_priv;
-
-}
-
-static q2pc_rudp_conn_priv* init_new_conn(q2pc_trans_conn* conn)
-{
-    q2pc_rudp_conn_priv* new_priv = new_conn_priv();
-
 
     conn->priv      = new_priv;
     conn->beg_read  = conn_beg_read;
@@ -183,45 +104,6 @@ static q2pc_rudp_conn_priv* init_new_conn(q2pc_trans_conn* conn)
     conn->delete    = conn_delete;
 
     return new_priv;
-}
-
-
-static void safe_connect(int fd, struct sockaddr_in* addr)
-{
-    if( connect(fd, (struct sockaddr *)addr, sizeof(struct sockaddr_in)) ){
-        ch_log_fatal("RUDP connect failed: %s\n",strerror(errno));
-    }
-
-}
-
-
-static void safe_wait_bind(int fd, struct sockaddr_in* addr)
-{
-
-    ch_log_debug3("Binding on %i port=%i\n", fd, ntohs(addr->sin_port));
-
-    if(bind(fd, (struct sockaddr *)addr, sizeof(struct sockaddr_in)) ){
-        uint64_t i = 0;
-
-        //Will wait up to two minutes trying if the address is in use.
-        //Helpful for quick restarts of apps as Linux keeps some state
-        //around for a while.
-        const int64_t seconds_per_try = 5;
-        const int64_t seconds_total = 120;
-        for(i = 0; i < seconds_total / seconds_per_try && errno == EADDRINUSE; i++){
-            ch_log_debug1("%i] %s --> sleeping for %i seconds...\n",i, strerror(errno), seconds_per_try);
-            sleep(seconds_per_try);
-            bind(fd, (struct sockaddr *)addr, sizeof(struct sockaddr_in));
-        }
-
-        if(errno){
-            ch_log_fatal("RUDP server bind failed: %s\n",strerror(errno));
-        }
-        else{
-            ch_log_debug1("Successfully bound after delay.\n");
-        }
-    }
-
 }
 
 
@@ -235,61 +117,13 @@ static int doconnect(struct q2pc_trans_s* this, q2pc_trans_conn* conn)
     if(!conn_priv){
 
         q2pc_rudp_conn_priv* new_priv = init_new_conn(conn);
-
-        int sock_fd = socket(AF_INET,SOCK_DGRAM,0);
-        if (sock_fd < 0 ){
-            ch_log_fatal("Could not create RUDP socket (%s)\n", strerror(errno));
+        if(trans_priv->base->connect(trans_priv->base,&conn_priv->base)){
+            ch_log_fatal("Could not create UDP base for RUDP\n");
         }
+        conn_priv = new_priv;
 
+        conn_priv->is_server = trans_priv->transport.server;
 
-        struct sockaddr_in addr;
-        memset(&addr,0,sizeof(addr));
-
-        if(trans_priv->transport.server){
-            //Listen to any address, on the client port
-            addr.sin_family      = AF_INET;
-            addr.sin_addr.s_addr = INADDR_ANY;
-            addr.sin_port        = htons(trans_priv->transport.port + trans_priv->connections);
-            safe_wait_bind(sock_fd,&addr);
-
-            //Read an write FDs are the same
-            new_priv->rd_fd = sock_fd;
-            new_priv->wr_fd = sock_fd;
-        }
-        else{
-
-            //Listen to any address, on the server broadcast port
-            addr.sin_family      = AF_INET;
-            addr.sin_addr.s_addr = INADDR_ANY;
-            addr.sin_port        = htons(trans_priv->transport.port);
-            safe_wait_bind(sock_fd,&addr);
-            new_priv->rd_fd = sock_fd;
-
-            int sock_wr_fd = socket(AF_INET,SOCK_DGRAM,0);
-            if (sock_wr_fd < 0 ){
-                ch_log_fatal("Could not create RUDP writer socket (%s)\n", strerror(errno));
-            }
-
-            //Send to the server on the server port
-            addr.sin_addr.s_addr = inet_addr(trans_priv->transport.ip);
-            addr.sin_port        = htons(trans_priv->transport.port + trans_priv->transport.client_id);
-            safe_connect(sock_wr_fd,&addr);
-            new_priv->wr_fd = sock_wr_fd;
-        }
-
-        int reuse_opt = 1;
-        if(setsockopt(new_priv->rd_fd, SOL_SOCKET, SO_REUSEADDR, &reuse_opt, sizeof(int)) < 0) {
-            ch_log_fatal("RUDP set reuse address failed: %s\n",strerror(errno));
-        }
-
-        int flags = 0;
-        flags |= O_NONBLOCK;
-        if( fcntl(new_priv->rd_fd, F_SETFL, flags) == -1){
-            ch_log_fatal("Could not set non-blocking on fd=%i: %s\n",new_priv->rd_fd,strerror(errno));
-        }
-
-        conn->priv = new_priv;
-        trans_priv->connections++;
     }
 
     return Q2PC_ENONE;
@@ -301,7 +135,8 @@ static void serv_delete(struct q2pc_trans_s* this)
     if(this){
 
         if(this->priv){
-            //q2pc_rudp_priv* priv = (q2pc_rudp_priv*)this->priv;
+            q2pc_rudp_priv* priv = (q2pc_rudp_priv*)this->priv;
+            priv->base->delete(priv->base);
             free(this->priv);
         }
 
@@ -311,15 +146,11 @@ static void serv_delete(struct q2pc_trans_s* this)
 }
 
 
-#define BUFF_SIZE (4096 * 1024) //A 4MB buffer. Just because
 static void init(q2pc_rudp_priv* priv)
 {
 
     ch_log_debug1("Constructing RUDP transport\n");
-
-    //Set up a broadcast socket tp be used by sendall
-    priv->connections = 0;
-
+    priv->base = q2pc_udp_construct(&priv->transport);
     ch_log_debug1("Done constructing RUDP transport\n");
 
 }
