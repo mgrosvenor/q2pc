@@ -32,7 +32,7 @@ volatile bool ack_seen           = false;
 static pthread_t* threads        = NULL;
 static i64 real_thread_count     = 0;
 static q2pc_trans* trans         = NULL;
-static i64 main_seq_no           = 0;
+//static i64 main_seq_no           = 0;
 static i64 client_count          = 0;
 
 
@@ -218,51 +218,54 @@ static void send_request(q2pc_msg_type_t msg_type, i64 seq_no)
 }
 
 
-int send_request_reliable(q2pc_msg_type_t msg_type, i64 timeout_us)
-{
-    ch_log_debug3("Sending request of type %i...\n", msg_type);
-
-    struct timeval ts_start = {0};
-    struct timeval ts_now   = {0};
-    i64 ts_start_us         = 0;
-    i64 ts_now_us           = 0;
-
-
-    gettimeofday(&ts_start, NULL);
-    ts_start_us = ts_start.tv_sec * 1000 * 1000 + ts_start.tv_usec;
-
-
-    send_request(msg_type,timeout_us);
-    int rto = 0;
-    ack_seen = false;
-    for(rto = 0; rto < 5;){
-
-        if(ack_seen){
-            ch_log_debug3("Got ack for seq=%li", main_seq_no);
-            break;
-        }
-
-        gettimeofday(&ts_now, NULL);
-        ts_now_us = ts_now.tv_sec * 1000 * 1000 + ts_now.tv_usec;
-        if(ts_now_us < ts_start_us + timeout_us){
-             continue; //Busy loop until the timeout fires
-        }
-
-        ch_log_warn("Retransmit timeout fired\n");
-        send_request(msg_type,timeout_us);
-
-        rto++;
-    }
-
-    if(rto >= 5){
-        ch_log_error("Too many timeouts, cannot send request, cluster failed\n");
-        return Q2PC_EFIN;
-    }
-
-
-    ch_log_debug3("Sending request of type %i...done\n", msg_type);
-    return Q2PC_ENONE;
-}
+//int send_request_reliable(q2pc_msg_type_t msg_type, i64 timeout_us)
+//{
+//    ch_log_debug3("Sending request of type %i...\n", msg_type);
+//
+//    struct timeval ts_start = {0};
+//    struct timeval ts_now   = {0};
+//    i64 ts_start_us         = 0;
+//    i64 ts_now_us           = 0;
+//
+//
+//    gettimeofday(&ts_start, NULL);
+//    ts_start_us = ts_start.tv_sec * 1000 * 1000 + ts_start.tv_usec;
+//
+//
+//    send_request(msg_type,timeout_us);
+//    int rto = 0;
+//    ack_seen = false;
+//    for(rto = 0; rto < 20;){
+//
+//        if(ack_seen){
+//            ch_log_debug3("Got ack for seq=%li", main_seq_no);
+//            break;
+//        }
+//
+//        gettimeofday(&ts_now, NULL);
+//        ts_now_us = ts_now.tv_sec * 1000 * 1000 + ts_now.tv_usec;
+//        if(ts_now_us < ts_start_us + timeout_us){
+//             continue; //Busy loop until the timeout fires
+//        }
+//
+//        gettimeofday(&ts_start, NULL);
+//        ts_start_us = ts_start.tv_sec * 1000 * 1000 + ts_start.tv_usec;
+//
+//        ch_log_warn("Retransmit timeout fired\n");
+//        send_request(msg_type,timeout_us);
+//
+//        rto++;
+//    }
+//
+//    if(rto >= 5){
+//        ch_log_error("Too many timeouts, cannot send request, cluster failed\n");
+//        return Q2PC_EFIN;
+//    }
+//
+//
+//    ch_log_debug3("Sending request of type %i...done\n", msg_type);
+//    return Q2PC_ENONE;
+//}
 
 
 typedef enum {  q2pc_request_success, q2pc_request_fail, q2pc_commit_success, q2pc_commit_fail, q2pc_cluster_fail } q2pc_commit_status_t;
@@ -306,6 +309,8 @@ void wait_for_votes(i64 timeout_us)
 q2pc_commit_status_t do_phase1(i64 cluster_timeout_us, i64 rto_timeout_us)
 {
 
+    (void)rto_timeout_us;
+
     q2pc_commit_status_t result = q2pc_request_success;
 
     //Init the scoreboard
@@ -316,7 +321,7 @@ q2pc_commit_status_t do_phase1(i64 cluster_timeout_us, i64 rto_timeout_us)
 
     //send out a broadcast message to all servers
     ch_log_debug2("Q2PC Server: [M]--> request\n");
-    send_request_reliable(q2pc_request_msg,rto_timeout_us);
+    send_request(q2pc_request_msg,0);
 
     //wait for all the responses
     wait_for_votes(cluster_timeout_us);
@@ -359,6 +364,8 @@ q2pc_commit_status_t do_phase1(i64 cluster_timeout_us, i64 rto_timeout_us)
 q2pc_commit_status_t do_phase2(q2pc_commit_status_t phase1_status, i64 cluster_timeout_us, i64 rto_timeout_us)
 {
 
+    (void)rto_timeout_us;
+
     //Init the scoreboard
     for(int i = 0; i < client_count; i++){
         __builtin_prefetch((char*)votes_scoreboard + i + 1);
@@ -368,11 +375,11 @@ q2pc_commit_status_t do_phase2(q2pc_commit_status_t phase1_status, i64 cluster_t
     switch(phase1_status){
         case q2pc_request_success:
             ch_log_debug2("Q2PC Server: [M]--> commit\n");
-            send_request_reliable(q2pc_commit_msg,rto_timeout_us);
+            send_request(q2pc_commit_msg,0);
             break;
         case q2pc_request_fail:
             ch_log_debug2("Q2PC Server: [M]--> cancel\n");
-            send_request_reliable(q2pc_cancel_msg,rto_timeout_us);
+            send_request(q2pc_cancel_msg,0);
             break;
         case q2pc_cluster_fail:
             return q2pc_cluster_fail;

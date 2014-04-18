@@ -135,7 +135,7 @@ static void conn_delete(struct q2pc_trans_conn_s* this)
 /***************************************************************************************************************************/
 
 typedef struct {
-    int fd;
+
     transport_s transport;
 
     i64 connections;
@@ -319,47 +319,6 @@ static void init(q2pc_rudp_priv* priv)
 
     //Set up a broadcast socket tp be used by sendall
     priv->connections = 0;
-
-    priv->fd = socket(AF_INET,SOCK_DGRAM,0);
-    if (priv->fd < 0 ){
-        ch_log_fatal("Could not create RUDP socket (%s)\n", strerror(errno));
-    }
-
-    int reuse_opt = 1;
-    if(setsockopt(priv->fd, SOL_SOCKET, SO_REUSEADDR, &reuse_opt, sizeof(int)) < 0) {
-        ch_log_fatal("RUDP set reuse address failed: %s\n",strerror(errno));
-    }
-
-    int broadcastEnable=1;
-    if( setsockopt(priv->fd, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, sizeof(broadcastEnable)) ){
-        ch_log_fatal("Could not set broadcast on fd=%i: %s\n",priv->fd,strerror(errno));
-    }
-
-    ch_log_debug2("Connecting to IP:port = name=%s:%i\n", priv->transport.bcast, priv->transport.port);
-    struct sockaddr_in addr;
-    memset(&addr,0,sizeof(addr));
-    addr.sin_family      = AF_INET;
-    addr.sin_addr.s_addr = inet_addr(priv->transport.bcast);
-    addr.sin_port        = htons(priv->transport.port);
-    if(connect(priv->fd, (struct sockaddr *)&addr, sizeof(addr)) ){
-        ch_log_fatal("RUDP connect failed on fd=%i - %s\n",priv->fd,strerror(errno));
-    }
-
-    int flags = 0;
-    flags |= O_NONBLOCK;
-    if( fcntl(priv->fd, F_SETFL, flags) == -1){
-        ch_log_fatal("Could not set non-blocking on fd=%i: %s\n",priv->fd,strerror(errno));
-    }
-
-    ch_log_debug2("Binding to interface name=%s\n", priv->transport.iface);
-    struct ifreq ifr;
-    memset(&ifr, 0, sizeof(ifr));
-    snprintf(ifr.ifr_name, sizeof(ifr.ifr_name), "%s", priv->transport.iface );
-    if( setsockopt(priv->fd, SOL_SOCKET, SO_BINDTODEVICE, (void *)&ifr, sizeof(ifr)) ){
-        ch_log_fatal("Could not set interface on fd=%i: %s\n",priv->fd,strerror(errno));
-    }
-
-    priv->connections++;
 
     ch_log_debug1("Done constructing RUDP transport\n");
 

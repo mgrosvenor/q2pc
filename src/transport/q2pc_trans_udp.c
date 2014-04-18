@@ -40,8 +40,13 @@ typedef struct {
     i64   write_buffer_used;
     i64   write_buffer_size;
 
+    bool is_connected;
+    struct sockaddr_in src_addr;
+
 } q2pc_udp_conn_priv;
 
+//Forward declaration
+static void safe_connect(int fd, struct sockaddr_in* addr);
 
 
 static int conn_beg_read(struct q2pc_trans_conn_s* this, char** data_o, i64* len_o)
@@ -51,7 +56,24 @@ static int conn_beg_read(struct q2pc_trans_conn_s* this, char** data_o, i64* len
         return Q2PC_ENONE;
     }
 
-    int result = read(priv->fd, priv->read_buffer, priv->read_buffer_size);
+    int result = -1 ;
+    if(unlikely(!priv->is_connected)){
+        //ch_log_debug3("Connecting with rcv from\n");
+        socklen_t addr_len = sizeof(priv->src_addr);
+        result = recvfrom(priv->fd,priv->read_buffer, priv->read_buffer_size, 0, (struct sockaddr*)&priv->src_addr, &addr_len);
+
+        if(result > 0){
+            safe_connect(priv->fd,&priv->src_addr);
+            ch_log_debug3("Connected to %li\n", ntohs(priv->src_addr.sin_port));
+            priv->is_connected = true;
+        }
+
+    }
+    else{
+        result = read(priv->fd, priv->read_buffer, priv->read_buffer_size);
+        //ch_log_debug3("Read to %i bytes\n",result);
+    }
+
     if(result < 0){
         if(errno == EAGAIN || errno == EWOULDBLOCK){
             return Q2PC_EAGAIN; //Reading would have blocked, we don't want this
@@ -59,6 +81,8 @@ static int conn_beg_read(struct q2pc_trans_conn_s* this, char** data_o, i64* len
 
         ch_log_fatal("udp read failed on fd=%i - %s\n",priv->fd,strerror(errno));
     }
+
+
 
     if(result == 0){
         return Q2PC_EFIN;
@@ -111,7 +135,7 @@ static int conn_end_write(struct q2pc_trans_conn_s* this, i64 len)
         len -= written;
     }
 
-    return Q2PC_EFIN;
+    return Q2PC_ENONE;
 
 }
 
@@ -136,10 +160,7 @@ static void conn_delete(struct q2pc_trans_conn_s* this)
 /***************************************************************************************************************************/
 
 typedef struct {
-    int fd;
-
     transport_s transport;
-
     i64 connections;
 
 } q2pc_udp_priv;
@@ -237,33 +258,38 @@ static int doconnect(struct q2pc_trans_s* this, q2pc_trans_conn* conn)
 
         q2pc_udp_conn_priv* new_priv = init_new_conn(conn);
 
-        int sock_fd = socket(AF_INET,SOCK_DGRAM,0);
-        if (sock_fd < 0 ){
+        new_priv->fd = socket(AF_INET,SOCK_DGRAM,0);
+        if(new_priv->fd < 0 ){
             ch_log_fatal("Could not create UDP socket (%s)\n", strerror(errno));
         }
 
 
-        struct sockaddr_in addr;
-        memset(&addr,0,sizeof(addr));
 
         if(trans_priv->transport.server){
             //Listen to any address, on the client port
-            addr.sin_family      = AF_INET;
-            addr.sin_addr.s_addr = INADDR_ANY;
-            addr.sin_port        = htons(trans_priv->transport.port + trans_priv->connections);
-            safe_wait_bind(sock_fd,&addr);
+            memset(&new_priv->src_addr,0,sizeof(new_priv->src_addr));
+            new_priv->is_connected = false;
 
-            //Read an write FDs are the same
-            new_priv->fd = sock_fd;
+            ch_log_debug3("Binding to %li\n", ntohs(new_priv->src_addr.sin_port));
+            new_priv->src_addr.sin_family      = AF_INET;
+            new_priv->src_addr.sin_addr.s_addr = INADDR_ANY;
+            new_priv->src_addr.sin_port        = htons(trans_priv->transport.port + trans_priv->connections);
+            safe_wait_bind(new_priv->fd,&new_priv->src_addr);
+
+            trans_priv->connections++;
         }
         else{
+            struct sockaddr_in addr;
+            memset(&addr,0,sizeof(addr));
+            new_priv->is_connected = true;
             //Listen to any address, on the server broadcast port
+            ch_log_debug3("Connecting to %li\n", ntohs(addr.sin_port));
             addr.sin_family      = AF_INET;
             addr.sin_addr.s_addr = INADDR_ANY;
             addr.sin_addr.s_addr = inet_addr(trans_priv->transport.ip);
             addr.sin_port        = htons(trans_priv->transport.port + trans_priv->transport.client_id);
-            safe_connect(sock_fd,&addr);
-            new_priv->fd = sock_fd;
+
+            safe_connect(new_priv->fd,&addr);
         }
 
         int reuse_opt = 1;
@@ -278,7 +304,7 @@ static int doconnect(struct q2pc_trans_s* this, q2pc_trans_conn* conn)
         }
 
         conn->priv = new_priv;
-        trans_priv->connections++;
+
     }
 
     return Q2PC_ENONE;
@@ -307,48 +333,7 @@ static void init(q2pc_udp_priv* priv)
     ch_log_debug1("Constructing UDP transport\n");
 
     //Keep track of port numbers
-    priv->connections = 0;
-
-    priv->fd = socket(AF_INET,SOCK_DGRAM,0);
-    if (priv->fd < 0 ){
-        ch_log_fatal("Could not create UDP socket (%s)\n", strerror(errno));
-    }
-
-    int reuse_opt = 1;
-    if(setsockopt(priv->fd, SOL_SOCKET, SO_REUSEADDR, &reuse_opt, sizeof(int)) < 0) {
-        ch_log_fatal("UDP set reuse address failed: %s\n",strerror(errno));
-    }
-
-    int broadcastEnable=1;
-    if( setsockopt(priv->fd, SOL_SOCKET, SO_BROADCAST, &broadcastEnable, sizeof(broadcastEnable)) ){
-        ch_log_fatal("Could not set broadcast on fd=%i: %s\n",priv->fd,strerror(errno));
-    }
-
-    ch_log_debug2("Connecting to IP:port = name=%s:%i\n", priv->transport.bcast, priv->transport.port);
-    struct sockaddr_in addr;
-    memset(&addr,0,sizeof(addr));
-    addr.sin_family      = AF_INET;
-    addr.sin_addr.s_addr = inet_addr(priv->transport.bcast);
-    addr.sin_port        = htons(priv->transport.port);
-    if(connect(priv->fd, (struct sockaddr *)&addr, sizeof(addr)) ){
-        ch_log_fatal("UDP connect failed on fd=%i - %s\n",priv->fd,strerror(errno));
-    }
-
-    int flags = 0;
-    flags |= O_NONBLOCK;
-    if( fcntl(priv->fd, F_SETFL, flags) == -1){
-        ch_log_fatal("Could not set non-blocking on fd=%i: %s\n",priv->fd,strerror(errno));
-    }
-
-    ch_log_debug2("Binding to interface name=%s\n", priv->transport.iface);
-    struct ifreq ifr;
-    memset(&ifr, 0, sizeof(ifr));
-    snprintf(ifr.ifr_name, sizeof(ifr.ifr_name), "%s", priv->transport.iface );
-    if( setsockopt(priv->fd, SOL_SOCKET, SO_BINDTODEVICE, (void *)&ifr, sizeof(ifr)) ){
-        ch_log_fatal("Could not set interface to %s on fd=%i: %s\n",priv->transport.iface, priv->fd,strerror(errno));
-    }
-
-    priv->connections++;
+    priv->connections = 1;
 
     ch_log_debug1("Done constructing UDP transport\n");
 
