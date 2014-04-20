@@ -209,10 +209,9 @@ static int conn_end_write(struct q2pc_trans_conn_s* this, i64 len)
     int result = priv->base.end_write(&priv->base, len + sizeof(priv->seq_no));
     if(result){
         ch_log_warn("Base stream returned error %li\n", result);
-        return result;
     }
 
-    return result;
+    return Q2PC_RTOFIRED;
 }
 
 

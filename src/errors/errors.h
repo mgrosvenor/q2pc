@@ -12,6 +12,7 @@
 #define Q2PC_ENONE (0)
 #define Q2PC_EAGAIN (-1)
 #define Q2PC_EFIN (-2)
+#define Q2PC_RTOFIRED (-3)
 
 
 

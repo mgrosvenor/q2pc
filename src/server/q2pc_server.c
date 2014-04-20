@@ -32,9 +32,9 @@ volatile bool ack_seen           = false;
 static pthread_t* threads        = NULL;
 static i64 real_thread_count     = 0;
 static q2pc_trans* trans         = NULL;
-//static i64 main_seq_no           = 0;
 static i64 client_count          = 0;
-
+static i64* conn_rtofired_count  = NULL;
+#define MAX_RTOS (20LL)
 
 void cleanup()
 {
@@ -137,6 +137,11 @@ void server_init(const i64 thread_count, const i64 c_count, const transport_s* t
     }
     bzero((void*)votes_scoreboard,sizeof(i64) * client_count);
 
+    posix_memalign((void*)&conn_rtofired_count, sizeof(i64), sizeof(i64) * client_count);
+    if(!conn_rtofired_count){
+        ch_log_fatal("Could not allocate memory for RTO fired counter\n");
+    }
+    bzero((void*)conn_rtofired_count,sizeof(i64) * client_count);
 
     //Set up all the connections
     ch_log_info("Waiting for clients to connect...\n\r");
@@ -191,6 +196,7 @@ static void send_request(q2pc_msg_type_t msg_type)
     char* data;
     i64 len;
 
+    //First, collect all the buffers
     for(int i = 0; i < client_count; i++){
 
         q2pc_trans_conn* conn = cons->first + i;
@@ -206,13 +212,41 @@ static void send_request(q2pc_msg_type_t msg_type)
         q2pc_msg* msg = (q2pc_msg*)data;
         msg->type       = msg_type;
         msg->src_hostid = ~0LL;
-
-        //Commit it
-        if(conn->end_write(conn, sizeof(q2pc_msg))){
-            ch_log_fatal("Could not commit broadcast message request\n");
-        }
     }
 
+    //Now send them all, and do the RTO timeouts
+    int commited = 0;
+    bzero(conn_rtofired_count,sizeof(i64) * client_count);
+
+    while(commited < client_count){
+        for(int i = 0; i < client_count; i++){
+
+            //This is naughty, I'm overloading this, with negative numbers meaning the value is sent
+            if(conn_rtofired_count[i] < 0LL){
+                continue;
+            }
+
+            q2pc_trans_conn* conn = cons->first + i;
+
+            int result = conn->end_write(conn, sizeof(q2pc_msg));
+            switch (result) {
+                case Q2PC_RTOFIRED:
+                    if(conn_rtofired_count[i] >= MAX_RTOS){ //HACK MAGIC NUMBER!
+                        ch_log_fatal("Connection failed to client %li. Cluster failed after %li RTOS\n", i, MAX_RTOS);
+                    }
+                    conn_rtofired_count[i]++;
+                    continue;
+                case Q2PC_EAGAIN:
+                    continue;
+                case Q2PC_ENONE:
+                    conn_rtofired_count[i] = -1;
+                    commited++;
+                    continue;
+                default:
+                    ch_log_fatal("Unexpected value (%li) from connection=%li\n", result, i);
+            }
+        }
+    }
 }
 
 
