@@ -11,13 +11,5 @@
 #include "../../deps/chaste/chaste.h"
 #include "../transport/q2pc_transport.h"
 
-void run_server(
-    const i64 thread_count,
-    const i64 client_count,
-    const transport_s* transport,
-    i64 wait_time,
-    i64 report_int,
-    i64 rto_time
-);
-
+void run_server(const i64 thread_count, const i64 client_count,  const transport_s* transport, i64 wait_time, i64 report_int);
 #endif /* Q2PC_SERVER_H_ */

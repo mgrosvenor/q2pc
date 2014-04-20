@@ -26,6 +26,8 @@ typedef struct {
     i64 client_id;
     char* bcast;
     char* iface;
+    i64 rto_us;
+
 } transport_s;
 
 

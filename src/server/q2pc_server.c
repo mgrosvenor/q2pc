@@ -186,7 +186,7 @@ void server_init(const i64 thread_count, const i64 c_count, const transport_s* t
 
 
 
-static void send_request(q2pc_msg_type_t msg_type, i64 seq_no)
+static void send_request(q2pc_msg_type_t msg_type)
 {
     char* data;
     i64 len;
@@ -206,8 +206,6 @@ static void send_request(q2pc_msg_type_t msg_type, i64 seq_no)
         q2pc_msg* msg = (q2pc_msg*)data;
         msg->type       = msg_type;
         msg->src_hostid = ~0LL;
-        msg->seq_no     = seq_no;
-        seq_no++;
 
         //Commit it
         if(conn->end_write(conn, sizeof(q2pc_msg))){
@@ -258,10 +256,8 @@ void wait_for_votes(i64 timeout_us)
 }
 
 
-q2pc_commit_status_t do_phase1(i64 cluster_timeout_us, i64 rto_timeout_us)
+q2pc_commit_status_t do_phase1(i64 cluster_timeout_us)
 {
-
-    (void)rto_timeout_us;
 
     q2pc_commit_status_t result = q2pc_request_success;
 
@@ -273,7 +269,7 @@ q2pc_commit_status_t do_phase1(i64 cluster_timeout_us, i64 rto_timeout_us)
 
     //send out a broadcast message to all servers
     ch_log_debug2("Q2PC Server: [M]--> request\n");
-    send_request(q2pc_request_msg,0);
+    send_request(q2pc_request_msg);
 
     //wait for all the responses
     wait_for_votes(cluster_timeout_us);
@@ -313,11 +309,8 @@ q2pc_commit_status_t do_phase1(i64 cluster_timeout_us, i64 rto_timeout_us)
 }
 
 
-q2pc_commit_status_t do_phase2(q2pc_commit_status_t phase1_status, i64 cluster_timeout_us, i64 rto_timeout_us)
+q2pc_commit_status_t do_phase2(q2pc_commit_status_t phase1_status, i64 cluster_timeout_us)
 {
-
-    (void)rto_timeout_us;
-
     //Init the scoreboard
     for(int i = 0; i < client_count; i++){
         __builtin_prefetch((char*)votes_scoreboard + i + 1);
@@ -327,11 +320,11 @@ q2pc_commit_status_t do_phase2(q2pc_commit_status_t phase1_status, i64 cluster_t
     switch(phase1_status){
         case q2pc_request_success:
             ch_log_debug2("Q2PC Server: [M]--> commit\n");
-            send_request(q2pc_commit_msg,0);
+            send_request(q2pc_commit_msg);
             break;
         case q2pc_request_fail:
             ch_log_debug2("Q2PC Server: [M]--> cancel\n");
-            send_request(q2pc_cancel_msg,0);
+            send_request(q2pc_cancel_msg);
             break;
         case q2pc_cluster_fail:
             return q2pc_cluster_fail;
@@ -384,7 +377,7 @@ q2pc_commit_status_t do_phase2(q2pc_commit_status_t phase1_status, i64 cluster_t
 
 }
 
-void run_server(const i64 thread_count, const i64 client_count,  const transport_s* transport, i64 wait_time, i64 report_int, i64 rto_time)
+void run_server(const i64 thread_count, const i64 client_count,  const transport_s* transport, i64 wait_time, i64 report_int)
 {
     //Set up all the threads, scoreboard, transport connections etc.
     server_init(thread_count, client_count, transport);
@@ -416,8 +409,8 @@ void run_server(const i64 thread_count, const i64 client_count,  const transport
 
 
         q2pc_commit_status_t status;
-        status = do_phase1(wait_time, rto_time);
-        status = do_phase2(status, wait_time, rto_time);
+        status = do_phase1(wait_time);
+        status = do_phase2(status, wait_time);
 
         switch(status){
             case q2pc_cluster_fail:     cleanup(); ch_log_fatal("Cluster failed\n"); break;

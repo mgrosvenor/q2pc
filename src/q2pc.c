@@ -43,7 +43,7 @@ static struct {
 
 	//General
 	i64 waittime;
-	i64 rto;
+	i64 rto_us;
 	i64 report_int;
 
 } options;
@@ -82,7 +82,7 @@ int main(int argc, char** argv)
     ch_opt_addii(CH_OPTION_OPTIONAL, 'v', "log-level",  "Log level verbosity (0 = lowest, 6 = highest)",  &options.log_verbosity, CH_LOG_LVL_INFO);
 
     ch_opt_addii(CH_OPTION_OPTIONAL, 'w',"wait","How long to wait for client/server delay (us)", &options.waittime, 2000 * 1000);
-    ch_opt_addii(CH_OPTION_OPTIONAL, 'o',"rto", "How long to wait before retransmitting a request", &options.rto, 200 * 1000);
+    ch_opt_addii(CH_OPTION_OPTIONAL, 'o',"rto", "How long to wait before retransmitting a request (us)", &options.rto_us, 200 * 1000);
     ch_opt_addii(CH_OPTION_OPTIONAL, 'S',"stats", "reporting interval for statistics", &options.report_int, 100);
     //Parse it all up
     ch_opt_parse(argc,argv);
@@ -167,6 +167,7 @@ int main(int argc, char** argv)
     transport.client_id     = options.client_id;
     transport.bcast         = options.bcast;
     transport.iface         = options.iface;
+    transport.rto_us        = options.rto_us;
 
 
     //Configure application options
@@ -190,7 +191,7 @@ int main(int argc, char** argv)
         run_client(&transport, options.client_id, options.waittime);
     }
     else{
-        run_server(options.threads, options.server,&transport, options.waittime, options.report_int, options.rto);
+        run_server(options.threads, options.server,&transport, options.waittime, options.report_int);
     }
 
     return 0;

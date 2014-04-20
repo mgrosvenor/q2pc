@@ -82,9 +82,6 @@ void* run_thread( void* p)
                     ch_log_warn("Q2PC Server: [%i] <-- Unknown message (%i)   from (%li)\n",thread_id, msg->type, msg->src_hostid );
             }
             con->end_read(con);
-            if(msg->seq_no > seqs->first[msg->src_hostid -1]){
-                seqs->first[msg->src_hostid -1] = msg->seq_no;
-            }
             BARRIER(); //Make sure there is no memory reordering here
 
             votes_count[thread_id]++;

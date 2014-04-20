@@ -40,11 +40,23 @@ typedef struct {
 
     pthread_mutex_t mutex;
 
+    struct timeval ts_start;
+    struct timeval ts_now;
+    i64 ts_start_us;
+    i64 ts_now_us;
+
+    bool ack_outstanding;
+    i64 current_seq;
+
+    i64 rto_timeout_us;
+
 } q2pc_rudp_conn_priv;
 
 
 #define BARRIER()  __asm__ volatile("" ::: "memory")
 #define PAUSE()    __asm__ volatile("pause")
+
+
 
 static int conn_beg_read(struct q2pc_trans_conn_s* this, char** data_o, i64* len_o)
 {
@@ -158,61 +170,47 @@ static int conn_end_write(struct q2pc_trans_conn_s* this, i64 len)
 {
     q2pc_rudp_conn_priv* priv = (q2pc_rudp_conn_priv*)this->priv;
 
-   const i64 current_seq = priv->seq_no;
+    if(!priv->ack_outstanding){
+        int result = priv->base.end_write(&priv->base, len + sizeof(priv->seq_no));
 
-    int result = priv->base.end_write(&priv->base, len + sizeof(priv->seq_no));
-
-    if(result){
-        ch_log_warn("Base stream returned error %li\n", result);
-        return result;
-    }
-
-    char* rd_data;
-    i64 rd_len;
-    struct timeval ts_start = {0};
-    struct timeval ts_now   = {0};
-    i64 ts_start_us         = 0;
-    i64 ts_now_us           = 0;
-    gettimeofday(&ts_start, NULL);
-    ts_start_us = ts_start.tv_sec * 1000 * 1000 + ts_start.tv_usec;
-    int timeout_us = 200 * 1000;
-
-    const int max_retires = 20;
-    if(priv->is_server) { conn_beg_read(this,&rd_data,&rd_len); }//Try to stimulate a a seq_no change
-    int rto = 0;
-    for(rto = 0; rto < max_retires;){
-
-        if(current_seq != priv->seq_no){
-            ch_log_debug3("Got ack for seq=%li\n", current_seq);
-            break;
-        }
-
-        if(priv->is_server) { conn_beg_read(this,&rd_data,&rd_len);} //Try to stimulate a a seq_no change
-
-        gettimeofday(&ts_now, NULL);
-        ts_now_us = ts_now.tv_sec * 1000 * 1000 + ts_now.tv_usec;
-        if(ts_now_us < ts_start_us + timeout_us){
-             continue; //Busy loop until the timeout fires
-        }
-
-        ch_log_warn("Retransmit timeout fired on seq_no=%lu\n", priv->seq_no);
-        result = priv->base.end_write(&priv->base, len + sizeof(priv->seq_no));
         if(result){
             ch_log_warn("Base stream returned error %li\n", result);
             return result;
         }
 
-        gettimeofday(&ts_start, NULL);
-        ts_start_us = ts_start.tv_sec * 1000 * 1000 + ts_start.tv_usec;
-        rto++;
+        gettimeofday(&priv->ts_start, NULL);
+        priv->ts_start_us = priv->ts_start.tv_sec * 1000 * 1000 + priv->ts_start.tv_usec;
+        priv->current_seq = priv->seq_no;
+
+        priv->ack_outstanding = true;
 
     }
 
-    if(rto >= max_retires){
-        ch_log_warn("Retransmit failure on seq_no=%lu\n", priv->seq_no);
-        return Q2PC_EFIN;
+    //Try to stimulate a a seq_no change
+    if(priv->is_server) {
+        char* rd_data;
+        i64 rd_len;
+        conn_beg_read(this,&rd_data,&rd_len);
     }
 
+    if(priv->current_seq != priv->seq_no){
+        ch_log_debug3("Got ack for seq=%li\n", priv->current_seq);
+        priv->ack_outstanding = false;
+        return Q2PC_ENONE; //Winner!
+    }
+
+    gettimeofday(&priv->ts_now, NULL);
+    priv->ts_now_us = priv->ts_now.tv_sec * 1000 * 1000 + priv->ts_now.tv_usec;
+    if(priv->ts_now_us < priv->ts_start_us + priv->rto_timeout_us){
+        return Q2PC_EAGAIN;
+    }
+
+    ch_log_warn("Retransmit timeout fired on seq_no=%lu\n", priv->seq_no);
+    int result = priv->base.end_write(&priv->base, len + sizeof(priv->seq_no));
+    if(result){
+        ch_log_warn("Base stream returned error %li\n", result);
+        return result;
+    }
 
     return result;
 }
@@ -271,14 +269,13 @@ static int doconnect(struct q2pc_trans_s* this, q2pc_trans_conn* conn)
     q2pc_rudp_conn_priv* conn_priv = (q2pc_rudp_conn_priv*)conn->priv;
 
     if(!conn_priv){
-        conn_priv                = init_new_conn(conn);
-        conn_priv->is_server     = !trans_priv->transport.server;
-        conn_priv->seq_no        = conn_priv->is_server ? 0 : -1; //Set to -1 for clients
-        conn_priv->read_data     = NULL;
-        conn_priv->read_data_len = 0;
-        pthread_mutex_init(&conn_priv->mutex,NULL);
-
-
+        conn_priv                   = init_new_conn(conn);
+        conn_priv->is_server        = !trans_priv->transport.server;
+        conn_priv->seq_no           = conn_priv->is_server ? 0 : -1; //Set to -1 for clients
+        conn_priv->read_data        = NULL;
+        conn_priv->read_data_len    = 0;
+        conn_priv->read_data_len    = trans_priv->transport.rto_us;
+        conn_priv->ack_outstanding  = false;
 
         conn->priv           = conn_priv;
 
