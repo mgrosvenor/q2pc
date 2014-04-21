@@ -5,13 +5,6 @@
  *      Author: mgrosvenor
  */
 
-
-/*
- * q2pc_trans_server.c
- *
- *  Created on: Apr 9, 2014
- *      Author: mgrosvenor
- */
 #include <stdlib.h>
 #include <arpa/inet.h>
 #include <sys/types.h>
