@@ -1,17 +1,11 @@
 /*
- * q2pc_trans_udp.c
+ * q2pc_trans_qj.c
  *
  *  Created on: Apr 12, 2014
  *      Author: mgrosvenor
  */
 
 
-/*
- * q2pc_trans_server.c
- *
- *  Created on: Apr 9, 2014
- *      Author: mgrosvenor
- */
 #include <stdlib.h>
 #include <arpa/inet.h>
 #include <sys/types.h>
@@ -22,7 +16,7 @@
 #include <fcntl.h>
 #include <stdio.h>
 
-#include "q2pc_trans_udp.h"
+#include "q2pc_trans_qj.h"
 #include "conn_vector.h"
 #include "../errors/errors.h"
 #include "../protocol/q2pc_protocol.h"
@@ -41,13 +35,13 @@ typedef struct {
     i64   write_buffer_used;
     i64   write_buffer_size;
 
-} q2pc_udp_conn_priv;
+} q2pc_qj_conn_priv;
 
 
 
 static int conn_beg_read(struct q2pc_trans_conn_s* this, char** data_o, i64* len_o)
 {
-    q2pc_udp_conn_priv* priv = (q2pc_udp_conn_priv*)this->priv;
+    q2pc_qj_conn_priv* priv = (q2pc_qj_conn_priv*)this->priv;
     if( priv->read_buffer && priv->read_buffer_used){
         return Q2PC_ENONE;
     }
@@ -58,7 +52,7 @@ static int conn_beg_read(struct q2pc_trans_conn_s* this, char** data_o, i64* len
             return Q2PC_EAGAIN; //Reading would have blocked, we don't want this
         }
 
-        ch_log_fatal("udp read failed on fd=%i - %s\n",priv->rd_fd,strerror(errno));
+        ch_log_fatal("qj read failed on fd=%i - %s\n",priv->rd_fd,strerror(errno));
     }
 
     if(result == 0){
@@ -77,7 +71,7 @@ static int conn_beg_read(struct q2pc_trans_conn_s* this, char** data_o, i64* len
 
 static int conn_end_read(struct q2pc_trans_conn_s* this)
 {
-    q2pc_udp_conn_priv* priv = (q2pc_udp_conn_priv*)this->priv;
+    q2pc_qj_conn_priv* priv = (q2pc_qj_conn_priv*)this->priv;
     priv->read_buffer_used = 0;
     return 0;
 }
@@ -86,7 +80,7 @@ static int conn_end_read(struct q2pc_trans_conn_s* this)
 
 static int conn_beg_write(struct q2pc_trans_conn_s* this, char** data_o, i64* len_o)
 {
-    q2pc_udp_conn_priv* priv = (q2pc_udp_conn_priv*)this->priv;
+    q2pc_qj_conn_priv* priv = (q2pc_qj_conn_priv*)this->priv;
     *data_o = priv->write_buffer;
     *len_o  = priv->write_buffer_size;
     return 0;
@@ -95,7 +89,7 @@ static int conn_beg_write(struct q2pc_trans_conn_s* this, char** data_o, i64* le
 
 static int conn_end_write(struct q2pc_trans_conn_s* this, i64 len)
 {
-    q2pc_udp_conn_priv* priv = (q2pc_udp_conn_priv*)this->priv;
+    q2pc_qj_conn_priv* priv = (q2pc_qj_conn_priv*)this->priv;
     char* data = priv->write_buffer;
 
     if(len > priv->write_buffer_size){
@@ -105,7 +99,7 @@ static int conn_end_write(struct q2pc_trans_conn_s* this, i64 len)
     while(len > 0){
         i64 written =  write(priv->wr_fd, data ,len);
         if(written < 0){
-            ch_log_fatal("UDP write failed: %s\n",strerror(errno));
+            ch_log_fatal("QJ write failed: %s\n",strerror(errno));
         }
         data += written;
         len -= written;
@@ -120,7 +114,7 @@ static void conn_delete(struct q2pc_trans_conn_s* this)
 {
     if(this){
         if(this->priv){
-            q2pc_udp_conn_priv* priv = (q2pc_udp_conn_priv*)this->priv;
+            q2pc_qj_conn_priv* priv = (q2pc_qj_conn_priv*)this->priv;
             if(priv->read_buffer){ free(priv->read_buffer); }
             //if(priv->write_buffer){ free(priv->write_buffer); } --Not necessary since r+w are allocated together
             free(this->priv);
@@ -147,50 +141,13 @@ typedef struct {
 
     i64 connections;
 
-} q2pc_udp_priv;
+} q2pc_qj_priv;
 
-
-
-
-static int beg_write_all(struct q2pc_trans_s* this, char** data_o, i64* len_o)
-{
-    q2pc_udp_priv* priv = (q2pc_udp_priv*)this->priv;
-
-    *data_o = priv->write_all_buffer;
-    *len_o  = priv->write_all_buffer_size;
-
-    return 0;
-}
-
-static int end_write_all(struct q2pc_trans_s* this, i64 msg_len)
-{
-
-    ch_log_debug3("Sending %li bytes to broadcast\n", msg_len);
-    q2pc_udp_priv* priv = (q2pc_udp_priv*)this->priv;
-
-    if(msg_len > priv->write_all_buffer_size){
-        ch_log_fatal("Error: Wrote more data than the buffer could handle. Memory corruption is likely\n ");
-    }
-
-    char* data = priv->write_all_buffer;
-
-    while(msg_len > 0){
-        i64 written =  write(priv->fd, data, msg_len);
-        if(written < 0){
-            ch_log_fatal("UDP write all failed: %s\n",strerror(errno));
-        }
-        data    += written;
-        msg_len -= written;
-    }
-
-    return 0;
-
-}
 
 #define BUFF_SIZE (4096 * 1024) //A 4MB buffer. Just because it feels right
-static q2pc_udp_conn_priv* new_conn_priv()
+static q2pc_qj_conn_priv* new_conn_priv()
 {
-    q2pc_udp_conn_priv* new_priv = calloc(1,sizeof(q2pc_udp_conn_priv));
+    q2pc_qj_conn_priv* new_priv = calloc(1,sizeof(q2pc_qj_conn_priv));
     if(!new_priv){
         ch_log_fatal("Malloc failed!\n");
     }
@@ -211,9 +168,9 @@ static q2pc_udp_conn_priv* new_conn_priv()
 
 }
 
-static q2pc_udp_conn_priv* init_new_conn(q2pc_trans_conn* conn)
+static q2pc_qj_conn_priv* init_new_conn(q2pc_trans_conn* conn)
 {
-    q2pc_udp_conn_priv* new_priv = new_conn_priv();
+    q2pc_qj_conn_priv* new_priv = new_conn_priv();
 
 
     conn->priv      = new_priv;
@@ -230,7 +187,7 @@ static q2pc_udp_conn_priv* init_new_conn(q2pc_trans_conn* conn)
 static void safe_connect(int fd, struct sockaddr_in* addr)
 {
     if( connect(fd, (struct sockaddr *)addr, sizeof(struct sockaddr_in)) ){
-        ch_log_fatal("UDP connect failed: %s\n",strerror(errno));
+        ch_log_fatal("QJ connect failed: %s\n",strerror(errno));
     }
 
 }
@@ -256,7 +213,7 @@ static void safe_wait_bind(int fd, struct sockaddr_in* addr)
         }
 
         if(errno){
-            ch_log_fatal("UDP server bind failed: %s\n",strerror(errno));
+            ch_log_fatal("QJ server bind failed: %s\n",strerror(errno));
         }
         else{
             ch_log_debug1("Successfully bound after delay.\n");
@@ -270,16 +227,16 @@ static void safe_wait_bind(int fd, struct sockaddr_in* addr)
 //Wait for all clients to connect
 static int doconnect(struct q2pc_trans_s* this, q2pc_trans_conn* conn)
 {
-    q2pc_udp_priv* trans_priv = (q2pc_udp_priv*)this->priv;
-    q2pc_udp_conn_priv* conn_priv = (q2pc_udp_conn_priv*)conn->priv;
+    q2pc_qj_priv* trans_priv = (q2pc_qj_priv*)this->priv;
+    q2pc_qj_conn_priv* conn_priv = (q2pc_qj_conn_priv*)conn->priv;
 
     if(!conn_priv){
 
-        q2pc_udp_conn_priv* new_priv = init_new_conn(conn);
+        q2pc_qj_conn_priv* new_priv = init_new_conn(conn);
 
         int sock_fd = socket(AF_INET,SOCK_DGRAM,0);
         if (sock_fd < 0 ){
-            ch_log_fatal("Could not create UDP socket (%s)\n", strerror(errno));
+            ch_log_fatal("Could not create QJ socket (%s)\n", strerror(errno));
         }
 
 
@@ -308,7 +265,7 @@ static int doconnect(struct q2pc_trans_s* this, q2pc_trans_conn* conn)
 
             int sock_wr_fd = socket(AF_INET,SOCK_DGRAM,0);
             if (sock_wr_fd < 0 ){
-                ch_log_fatal("Could not create UDP writer socket (%s)\n", strerror(errno));
+                ch_log_fatal("Could not create QJ writer socket (%s)\n", strerror(errno));
             }
 
             //Send to the server on the server port
@@ -320,7 +277,7 @@ static int doconnect(struct q2pc_trans_s* this, q2pc_trans_conn* conn)
 
         int reuse_opt = 1;
         if(setsockopt(new_priv->rd_fd, SOL_SOCKET, SO_REUSEADDR, &reuse_opt, sizeof(int)) < 0) {
-            ch_log_fatal("UDP set reuse address failed: %s\n",strerror(errno));
+            ch_log_fatal("QJ set reuse address failed: %s\n",strerror(errno));
         }
 
         int flags = 0;
@@ -342,7 +299,7 @@ static void serv_delete(struct q2pc_trans_s* this)
     if(this){
 
         if(this->priv){
-            //q2pc_udp_priv* priv = (q2pc_udp_priv*)this->priv;
+            //q2pc_qj_priv* priv = (q2pc_qj_priv*)this->priv;
             free(this->priv);
         }
 
@@ -353,10 +310,10 @@ static void serv_delete(struct q2pc_trans_s* this)
 
 
 #define BUFF_SIZE (4096 * 1024) //A 4MB buffer. Just because
-static void init(q2pc_udp_priv* priv)
+static void init(q2pc_qj_priv* priv)
 {
 
-    ch_log_debug1("Constructing UDP transport\n");
+    ch_log_debug1("Constructing QJ transport\n");
 
     //Set up a broadcast socket tp be used by sendall
     void* write_all_buff = calloc(1,BUFF_SIZE);
@@ -369,12 +326,12 @@ static void init(q2pc_udp_priv* priv)
 
     priv->fd = socket(AF_INET,SOCK_DGRAM,0);
     if (priv->fd < 0 ){
-        ch_log_fatal("Could not create UDP socket (%s)\n", strerror(errno));
+        ch_log_fatal("Could not create QJ socket (%s)\n", strerror(errno));
     }
 
     int reuse_opt = 1;
     if(setsockopt(priv->fd, SOL_SOCKET, SO_REUSEADDR, &reuse_opt, sizeof(int)) < 0) {
-        ch_log_fatal("UDP set reuse address failed: %s\n",strerror(errno));
+        ch_log_fatal("QJ set reuse address failed: %s\n",strerror(errno));
     }
 
     int broadcastEnable=1;
@@ -389,7 +346,7 @@ static void init(q2pc_udp_priv* priv)
     addr.sin_addr.s_addr = inet_addr(priv->transport.bcast);
     addr.sin_port        = htons(priv->transport.port);
     if(connect(priv->fd, (struct sockaddr *)&addr, sizeof(addr)) ){
-        ch_log_fatal("UDP connect failed on fd=%i - %s\n",priv->fd,strerror(errno));
+        ch_log_fatal("QJ connect failed on fd=%i - %s\n",priv->fd,strerror(errno));
     }
 
     int flags = 0;
@@ -408,28 +365,26 @@ static void init(q2pc_udp_priv* priv)
 
     priv->connections++;
 
-    ch_log_debug1("Done constructing UDP transport\n");
+    ch_log_debug1("Done constructing QJ transport\n");
 
 }
 
 
-q2pc_trans* q2pc_udp_construct(const transport_s* transport)
+q2pc_trans* q2pc_qj_construct(const transport_s* transport)
 {
     q2pc_trans* result = (q2pc_trans*)calloc(1,sizeof(q2pc_trans));
     if(!result){
-        ch_log_fatal("Could not allocate UDP server structure\n");
+        ch_log_fatal("Could not allocate QJ server structure\n");
     }
 
-    q2pc_udp_priv* priv = (q2pc_udp_priv*)calloc(1,sizeof(q2pc_udp_priv));
+    q2pc_qj_priv* priv = (q2pc_qj_priv*)calloc(1,sizeof(q2pc_qj_priv));
     if(!priv){
-        ch_log_fatal("Could not allocate UDP server private structure\n");
+        ch_log_fatal("Could not allocate QJ server private structure\n");
     }
 
     result->priv          = priv;
     result->connect       = doconnect;
     result->delete        = serv_delete;
-    result->beg_write_all = beg_write_all;
-    result->end_write_all = end_write_all;
     memcpy(&priv->transport,transport, sizeof(transport_s));
     init(priv);
 

@@ -13,7 +13,7 @@
 #include "conn_vector.h"
 
 
-typedef enum { udp_ln = 0, tcp_ln, udp_nm, rdp_ln, rdp_nm, udp_qj } transport_e;
+typedef enum { udp_ln = 0, tcp_ln, rdp_ln, udp_qj } transport_e;
 
 typedef struct {
     transport_e type;

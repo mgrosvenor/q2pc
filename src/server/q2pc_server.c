@@ -34,6 +34,7 @@ static i64 real_thread_count     = 0;
 static q2pc_trans* trans         = NULL;
 static i64 client_count          = 0;
 static i64* conn_rtofired_count  = NULL;
+static transport_e trans_type    = -1;
 #define MAX_RTOS (20LL)
 
 void cleanup()
@@ -129,6 +130,7 @@ void server_init(const i64 thread_count, const i64 c_count, const transport_s* t
     signal(SIGINT, term);
 
     client_count = c_count;
+    trans_type   = transport->type;
 
     //Set up and init the voting scoreboard
     posix_memalign((void*)&votes_scoreboard, sizeof(i64), sizeof(i64) * client_count);
@@ -195,6 +197,27 @@ static void send_request(q2pc_msg_type_t msg_type)
 {
     char* data;
     i64 len;
+
+    //UDP over q-jump uses broadcast on the write, so we only need to send once, and is reliable, so don't have to wait
+    if(trans_type == udp_qj){
+        q2pc_trans_conn* conn = cons->first;
+
+        if(conn->beg_write(conn,&data,&len)){
+            ch_log_fatal("Could not complete broadcast message request\n");
+        }
+
+        if(len < (i64)sizeof(q2pc_msg)){
+            ch_log_fatal("Not enough space to send a Q2PC message. Needed %li, but found %li\n", sizeof(q2pc_msg), len);
+        }
+
+        q2pc_msg* msg = (q2pc_msg*)data;
+        msg->type       = msg_type;
+        msg->src_hostid = ~0LL;
+
+        conn->end_write(conn, sizeof(q2pc_msg));
+        return;
+    }
+
 
     //First, collect all the buffers
     for(int i = 0; i < client_count; i++){

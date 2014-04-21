@@ -22,8 +22,6 @@ static struct {
 	bool trans_tcp_ln;
 	bool trans_udp_ln;
 	bool trans_rdp_ln;
-	bool trans_udp_nm;
-	bool trans_rdp_nm;
 	bool trans_udp_qj;
 
 	//Transport options
@@ -63,8 +61,6 @@ int main(int argc, char** argv)
     ch_opt_addbi(CH_OPTION_FLAG,    'u',"udp-ln","Use Linux based UDP transport [default]", &options.trans_udp_ln, false);
     ch_opt_addbi(CH_OPTION_FLAG,    't',"tcp-ln","Use Linux based TCP transport", &options.trans_tcp_ln, false);
     ch_opt_addbi(CH_OPTION_FLAG,    'r',"rdp-ln","Use Linux based UDP transport with reliability", &options.trans_rdp_ln, false);
-    ch_opt_addbi(CH_OPTION_FLAG,    'U',"udp-nm","Use NetMap based UDP transport", &options.trans_udp_nm, false);
-    ch_opt_addbi(CH_OPTION_FLAG,    'R',"rdp-nm","Use NetMap based RDP transport", &options.trans_rdp_nm, false);
     ch_opt_addbi(CH_OPTION_FLAG,    'Q',"udp-qj","Use NetMap based UDP transport over Q-Jump", &options.trans_udp_qj, false);
 
     //Qjump Transport options
@@ -129,8 +125,6 @@ int main(int argc, char** argv)
     transport_opt_count += options.trans_udp_ln ? 1 : 0;
     transport_opt_count += options.trans_tcp_ln ? 1 : 0;
     transport_opt_count += options.trans_rdp_ln ? 1 : 0;
-    transport_opt_count += options.trans_udp_nm ? 1 : 0;
-    transport_opt_count += options.trans_rdp_nm ? 1 : 0;
     transport_opt_count += options.trans_udp_qj ? 1 : 0;
 
     //Make sure only 1 choice has been made
@@ -139,8 +133,6 @@ int main(int argc, char** argv)
                 options.trans_udp_ln ? "udp-ln " : "",
                 options.trans_tcp_ln ? "tcp-ln " : "",
                 options.trans_tcp_ln ? "rdp-ln " : "",
-                options.trans_udp_nm ? "udp-nm " : "",
-                options.trans_rdp_nm ? "rdp-nm " : "",
                 options.trans_udp_qj ? "udp-qj " : ""
         );
     }
@@ -154,8 +146,6 @@ int main(int argc, char** argv)
     transport_s transport = {0};
     transport.type          = options.trans_udp_ln ? udp_ln : transport.type;
     transport.type          = options.trans_tcp_ln ? tcp_ln : transport.type;
-    transport.type          = options.trans_udp_nm ? udp_nm : transport.type;
-    transport.type          = options.trans_rdp_nm ? rdp_nm : transport.type;
     transport.type          = options.trans_udp_qj ? udp_qj : transport.type;
     transport.type          = options.trans_rdp_ln ? rdp_ln : transport.type;
     transport.qjump_epoch   = options.qjump_epoch;

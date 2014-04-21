@@ -10,6 +10,7 @@
 #include "q2pc_trans_tcp.h"
 #include "q2pc_trans_udp.h"
 #include "q2pc_trans_rudp.h"
+#include "q2pc_trans_qj.h"
 
 
 q2pc_trans* trans_factory(const transport_s* transport)
@@ -18,6 +19,7 @@ q2pc_trans* trans_factory(const transport_s* transport)
         case tcp_ln: return q2pc_tcp_construct(transport);
         case udp_ln: return q2pc_udp_construct(transport);
         case rdp_ln: return q2pc_rudp_construct(transport);
+        case udp_qj: return q2pc_qj_construct(transport);
         default: ch_log_fatal("Not implemented\n");
     }
 
