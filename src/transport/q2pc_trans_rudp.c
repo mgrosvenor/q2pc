@@ -171,6 +171,7 @@ static int conn_end_write(struct q2pc_trans_conn_s* this, i64 len)
     q2pc_rudp_conn_priv* priv = (q2pc_rudp_conn_priv*)this->priv;
 
     if(!priv->ack_outstanding){
+        ch_log_debug3("Committing write to base stream\n");
         int result = priv->base.end_write(&priv->base, len + sizeof(priv->seq_no));
 
         if(result){
@@ -180,6 +181,7 @@ static int conn_end_write(struct q2pc_trans_conn_s* this, i64 len)
 
         gettimeofday(&priv->ts_start, NULL);
         priv->ts_start_us = priv->ts_start.tv_sec * 1000 * 1000 + priv->ts_start.tv_usec;
+        ch_log_debug3("Time now = %li\n", priv->ts_start_us);
         priv->current_seq = priv->seq_no;
 
         priv->ack_outstanding = true;
@@ -205,11 +207,17 @@ static int conn_end_write(struct q2pc_trans_conn_s* this, i64 len)
         return Q2PC_EAGAIN;
     }
 
+    ch_log_debug3("Time now %li > %li (diff=%li > %li)\n", priv->ts_now_us, priv->ts_start_us, priv->ts_now_us - priv->ts_start_us, priv->rto_timeout_us);
+
     ch_log_warn("Retransmit timeout fired on seq_no=%lu\n", priv->seq_no);
     int result = priv->base.end_write(&priv->base, len + sizeof(priv->seq_no));
     if(result){
         ch_log_warn("Base stream returned error %li\n", result);
     }
+
+    gettimeofday(&priv->ts_start, NULL);
+    priv->ts_start_us = priv->ts_start.tv_sec * 1000 * 1000 + priv->ts_start.tv_usec;
+    ch_log_debug3("Time now = %li\n", priv->ts_start_us);
 
     return Q2PC_RTOFIRED;
 }
@@ -273,7 +281,7 @@ static int doconnect(struct q2pc_trans_s* this, q2pc_trans_conn* conn)
         conn_priv->seq_no           = conn_priv->is_server ? 0 : -1; //Set to -1 for clients
         conn_priv->read_data        = NULL;
         conn_priv->read_data_len    = 0;
-        conn_priv->read_data_len    = trans_priv->transport.rto_us;
+        conn_priv->rto_timeout_us   = trans_priv->transport.rto_us;
         conn_priv->ack_outstanding  = false;
 
         conn->priv           = conn_priv;

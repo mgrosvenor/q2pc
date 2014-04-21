@@ -19,6 +19,7 @@ static q2pc_trans* trans    = NULL;
 static q2pc_trans_conn conn = {0};
 static i64 client_num       = -1;
 static u64 vote_count       = 0;
+#define RTOS_MAX (20LL)
 
 static void term(int signo)
 {
@@ -46,7 +47,8 @@ static void init(const transport_s* transport)
 
     bool connected = false;
     while(!connected){
-                          //Connections are non-blocking
+
+        //Connections are non-blocking
         if(trans->connect(trans, &conn)){
             continue;
         }
@@ -65,7 +67,24 @@ static void init(const transport_s* transport)
         msg->type       = q2pc_con_msg;
         msg->src_hostid = transport->client_id;
 
-        conn.end_write(&conn, sizeof(q2pc_msg));
+        //Wait around a bit for the connection to be established
+        for(int rtos = 0; rtos < RTOS_MAX; ){
+            int result = conn.end_write(&conn, sizeof(q2pc_msg));
+
+            if(result == Q2PC_ENONE){ break; } //Can't do this inside the switch! :-P
+
+            switch (result) {
+                case Q2PC_EAGAIN:
+                    continue;
+                case Q2PC_RTOFIRED:
+                    rtos++;
+                    ch_log_debug3("Retransmitting\n");
+                    continue;
+                default:
+                    ch_log_fatal("Unexpected return value from connection (%li)\n", result);
+            }
+        }
+
         connected = true;
 
     }
@@ -139,8 +158,23 @@ static void send_response(q2pc_msg_type_t msg_type)
     msg->src_hostid = client_num;
 
     //Commit it
-    conn.end_write(&conn, sizeof(q2pc_msg));
+    for(int rtos = 0; rtos < RTOS_MAX; ){
+        int result = conn.end_write(&conn, sizeof(q2pc_msg));
 
+        if(result == Q2PC_ENONE){
+            break; //Can't do this inside the switch! :-P
+        }
+
+        switch (result) {
+        case Q2PC_EAGAIN:
+            continue;
+        case Q2PC_RTOFIRED:
+            rtos++;
+            continue;
+        default:
+            ch_log_fatal("Unexpected value (%li)\n", result);
+        }
+    }
 }
 
 

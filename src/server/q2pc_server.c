@@ -223,6 +223,7 @@ static void send_request(q2pc_msg_type_t msg_type)
 
             //This is naughty, I'm overloading this, with negative numbers meaning the value is sent
             if(conn_rtofired_count[i] < 0LL){
+                ch_log_debug3("Ack'd on client %li. Ignoring for now\n", i);
                 continue;
             }
 
