@@ -68,7 +68,7 @@ static void init(const transport_s* transport)
         msg->src_hostid = transport->client_id;
 
         //Wait around a bit for the connection to be established
-        for(int rtos = 0; rtos < RTOS_MAX; ){
+        for(int rtos = 0; /*rtos < RTOS_MAX*/; ){ //Wait forever
             int result = conn.end_write(&conn, sizeof(q2pc_msg));
 
             if(result == Q2PC_ENONE){ break; } //Can't do this inside the switch! :-P
@@ -78,7 +78,6 @@ static void init(const transport_s* transport)
                     continue;
                 case Q2PC_RTOFIRED:
                     rtos++;
-                    ch_log_debug3("Retransmitting\n");
                     continue;
                 default:
                     ch_log_fatal("Unexpected return value from connection (%li)\n", result);
