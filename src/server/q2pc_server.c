@@ -59,7 +59,7 @@ void cleanup()
         trans->delete(trans);
     }
 
-    int fd = open("q2pc_stats", O_WRONLY);
+    int fd = open("q2pc_stats", O_WRONLY| O_CREAT | O_TRUNC,  S_IRWXU );
     if(fd < 0){
         ch_log_fatal("Could not open statistics output file error = %s\n", strerror(errno));
     }
@@ -74,10 +74,26 @@ void cleanup()
     i64 time_start;
     i64 time_end;
      */
+
+    i64 start_us = 0;
+
     ch_log_info("Writing stats to file...\n");
     for(int i = 0; i < real_thread_count; i++){
         for(int j = 0; j < stats_len / real_thread_count; j++){
-            int len = snprintf(tmp_line,1024,"%li %li %li %li %li %li %li\n", stats_mem[i][j].thread_id,  stats_mem[i][j].client_id,  stats_mem[i][j].c_rtos,  stats_mem[i][j].s_rtos,  stats_mem[i][j].time_start,  stats_mem[i][j].time_end,  stats_mem[i][j].time_end -  stats_mem[i][j].time_start);
+            if(j == 0){
+                start_us = stats_mem[i][j].time_start;
+            }
+
+            int len = snprintf(tmp_line,1024,"%li %li %li %li %li %li %li %li %li\n",
+                    stats_mem[i][j].time_start - start_us,
+                    stats_mem[i][j].thread_id,
+                    stats_mem[i][j].client_id,
+                    stats_mem[i][j].c_rtos,
+                    stats_mem[i][j].s_rtos,
+                    stats_mem[i][j].time_start,
+                    stats_mem[i][j].time_end,
+                    stats_mem[i][j].time_end -  stats_mem[i][j].time_start,
+                    stats_mem[i][j].type);
             write(fd,tmp_line, len);
         }
     }

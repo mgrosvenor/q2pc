@@ -47,11 +47,11 @@ void* run_thread( void* p)
 
     i64 stats_idx = 0;
 
-    posix_memalign((void*)&stats_mem[thread_id], sizeof(stat_t), sizeof(stat_t) * stats_len );
+    stats_mem[thread_id] = calloc(stats_len, sizeof(stat_t));
     if(!stats_mem[thread_id]){
-        ch_log_fatal("Could not allocate memory for statistics counter\n");
+        ch_log_fatal("Could not allocate %liB of memory for statistics counter\n", sizeof(stat_t) * stats_len);
     }
-    bzero((void*)&stats_mem[thread_id],sizeof(stat_t) * stats_len);
+    bzero((void*)stats_mem[thread_id],sizeof(stat_t) * stats_len);
 
 
     ch_log_debug3("Running worker thread\n");
@@ -108,6 +108,8 @@ void* run_thread( void* p)
             stats_mem[thread_id][stats_idx].client_id  = msg->src_hostid;
             stats_mem[thread_id][stats_idx].c_rtos     = msg->c_rto;
             stats_mem[thread_id][stats_idx].s_rtos     = msg->s_rto;
+            stats_mem[thread_id][stats_idx].type       = msg->type;
+
 
             stats_idx++;
             if(stats_idx > stats_len){
@@ -120,6 +122,8 @@ void* run_thread( void* p)
 
         }
     }
+
+    sleep(4);
 
     ch_log_debug3("Cleaning up connections...\n");
     //We're done with the connections now, clean them up

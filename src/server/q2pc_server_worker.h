@@ -24,6 +24,7 @@ typedef struct{
     i64 s_rtos;
     i64 time_start;
     i64 time_end;
+    i64 type;
 } stat_t;
 
 
