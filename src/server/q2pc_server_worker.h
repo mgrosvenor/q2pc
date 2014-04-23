@@ -14,7 +14,18 @@ typedef struct{
     i64 hi;
     i64 count;
     i64 thread_id;
+    i64 stats_len;
 } thread_params_t;
+
+typedef struct{
+    i64 thread_id;
+    i64 client_id;
+    i64 c_rtos;
+    i64 s_rtos;
+    i64 time_start;
+    i64 time_end;
+} stat_t;
+
 
 void* run_thread( void* p);
 

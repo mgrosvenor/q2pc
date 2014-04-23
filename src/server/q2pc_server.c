@@ -11,12 +11,16 @@
 #include <pthread.h>
 #include <signal.h>
 #include <sys/time.h>
+#include <stdio.h>
+#include <fcntl.h>
+#include <errno.h>
 
 #include "q2pc_server.h"
 #include "../transport/q2pc_transport.h"
 #include "../errors/errors.h"
 #include "../protocol/q2pc_protocol.h"
 #include "q2pc_server_worker.h"
+
 
 
 //Server wide globals
@@ -26,6 +30,7 @@ volatile bool stop_signal        = false;
 volatile bool pause_signal       = false;
 volatile i64* votes_scoreboard   = NULL;
 volatile i64* votes_count        = NULL;
+volatile stat_t** stats_mem      = NULL;
 volatile bool ack_seen           = false;
 
 //File globals
@@ -34,7 +39,9 @@ static i64 real_thread_count     = 0;
 static q2pc_trans* trans         = NULL;
 static i64 client_count          = 0;
 static i64* conn_rtofired_count  = NULL;
+
 static transport_e trans_type    = -1;
+static i64 stats_len             = 0;
 #define MAX_RTOS (20LL)
 
 void cleanup()
@@ -51,6 +58,32 @@ void cleanup()
     if(trans){
         trans->delete(trans);
     }
+
+    int fd = open("q2pc_stats", O_WRONLY);
+    if(fd < 0){
+        ch_log_fatal("Could not open statistics output file error = %s\n", strerror(errno));
+    }
+
+    char tmp_line[1024] = {0};
+
+    /*
+     *     i64 thread_id;
+    i64 client_id;
+    i64 c_rtos;
+    i64 s_rtos;
+    i64 time_start;
+    i64 time_end;
+     */
+    ch_log_info("Writing stats to file...\n");
+    for(int i = 0; i < real_thread_count; i++){
+        for(int j = 0; j < stats_len / real_thread_count; j++){
+            int len = snprintf(tmp_line,1024,"%li %li %li %li %li %li %li\n", stats_mem[i][j].thread_id,  stats_mem[i][j].client_id,  stats_mem[i][j].c_rtos,  stats_mem[i][j].s_rtos,  stats_mem[i][j].time_start,  stats_mem[i][j].time_end,  stats_mem[i][j].time_end -  stats_mem[i][j].time_start);
+            write(fd,tmp_line, len);
+        }
+    }
+    ch_log_info("Writing stats to file...Done.\n");
+
+    close(fd);
 
 }
 
@@ -120,7 +153,7 @@ void do_connectall()
 
 
 
-void server_init(const i64 thread_count, const i64 c_count, const transport_s* transport)
+void server_init(const i64 thread_count, const i64 c_count, const transport_s* transport, i64 stats_l)
 {
 
     //Signal handling for the main thread
@@ -131,6 +164,7 @@ void server_init(const i64 thread_count, const i64 c_count, const transport_s* t
 
     client_count = c_count;
     trans_type   = transport->type;
+    stats_len    = stats_l;
 
     //Set up and init the voting scoreboard
     posix_memalign((void*)&votes_scoreboard, sizeof(i64), sizeof(i64) * client_count);
@@ -144,6 +178,13 @@ void server_init(const i64 thread_count, const i64 c_count, const transport_s* t
         ch_log_fatal("Could not allocate memory for RTO fired counter\n");
     }
     bzero((void*)conn_rtofired_count,sizeof(i64) * client_count);
+
+    posix_memalign((void*)&stats_mem, sizeof(stat_t*), sizeof(stat_t*) * thread_count);
+    if(!stats_mem){
+        ch_log_fatal("Could not allocate memory for stats arrays fired counter\n");
+    }
+    bzero((void*)stats_mem,sizeof(stat_t*) * thread_count);
+
 
     //Set up all the connections
     ch_log_info("Waiting for clients to connect...\n\r");
@@ -179,6 +220,7 @@ void server_init(const i64 thread_count, const i64 c_count, const transport_s* t
         params->hi          = hi;
         params->count       = client_count;
         params->thread_id   = i;
+        params->stats_len   = stats_len / real_thread_count;
 
         pthread_create(threads + i, NULL, run_thread, (void*)params);
 
@@ -210,9 +252,17 @@ static void send_request(q2pc_msg_type_t msg_type)
             ch_log_fatal("Not enough space to send a Q2PC message. Needed %li, but found %li\n", sizeof(q2pc_msg), len);
         }
 
+        struct timeval ts_start   = {0};
+        gettimeofday(&ts_start, NULL);
+        const i64 ts_start_us = ts_start.tv_sec * 1000 * 1000 + ts_start.tv_usec;
+
+
         q2pc_msg* msg = (q2pc_msg*)data;
         msg->type       = msg_type;
         msg->src_hostid = ~0LL;
+        msg->ts         = ts_start_us;
+        msg->s_rto      = 0;
+        msg->c_rto      = 0;
 
         conn->end_write(conn, sizeof(q2pc_msg));
         return;
@@ -232,9 +282,17 @@ static void send_request(q2pc_msg_type_t msg_type)
             ch_log_fatal("Not enough space to send a Q2PC message. Needed %li, but found %li\n", sizeof(q2pc_msg), len);
         }
 
+        struct timeval ts_start   = {0};
+        gettimeofday(&ts_start, NULL);
+        const i64 ts_start_us = ts_start.tv_sec * 1000 * 1000 + ts_start.tv_usec;
+
         q2pc_msg* msg = (q2pc_msg*)data;
         msg->type       = msg_type;
         msg->src_hostid = ~0LL;
+        msg->ts         = ts_start_us;
+        msg->s_rto      = 0;
+        msg->c_rto      = 0;
+
     }
 
     //Now send them all, and do the RTO timeouts
@@ -435,10 +493,10 @@ q2pc_commit_status_t do_phase2(q2pc_commit_status_t phase1_status, i64 cluster_t
 
 }
 
-void run_server(const i64 thread_count, const i64 client_count,  const transport_s* transport, i64 wait_time, i64 report_int)
+void run_server(const i64 thread_count, const i64 client_count,  const transport_s* transport, i64 wait_time, i64 report_int, i64 stats_len)
 {
     //Set up all the threads, scoreboard, transport connections etc.
-    server_init(thread_count, client_count, transport);
+    server_init(thread_count, client_count, transport, stats_len);
 
     //Statistics keeping
     struct timeval ts_start = {0};
@@ -450,7 +508,7 @@ void run_server(const i64 thread_count, const i64 client_count,  const transport
     ts_start_us = ts_start.tv_sec * 1000 * 1000 + ts_start.tv_usec;
 
     ch_log_info("Running...\n");
-    for(i64 requests = 0; ; requests++){
+    for(i64 requests = 0; !stop_signal; requests++){
 
         if(requests && (requests % report_int == 0) ){
             gettimeofday(&ts_now, NULL);
@@ -478,6 +536,8 @@ void run_server(const i64 thread_count, const i64 client_count,  const transport
                 ch_log_fatal("Internal error: unexpected result from phase 2\n");
         }
     }
+
+    term(0);
 
 }
 

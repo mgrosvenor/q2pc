@@ -28,6 +28,7 @@ extern volatile bool pause_signal;
 //static i64 real_thread_count            = 0;
 extern volatile i64* votes_scoreboard ;
 extern volatile i64* votes_count;
+extern volatile stat_t** stats_mem;
 //static q2pc_trans* trans                = NULL;
 //static volatile i64 seq_no              = 0;
 
@@ -41,7 +42,17 @@ void* run_thread( void* p)
     i64 hi          = params->hi;
     i64 count       = params->count;
     i64 thread_id   = params->thread_id;
+    i64 stats_len   = params->stats_len;
     free(params);
+
+    i64 stats_idx = 0;
+
+    posix_memalign((void*)&stats_mem[thread_id], sizeof(stat_t), sizeof(stat_t) * stats_len );
+    if(!stats_mem[thread_id]){
+        ch_log_fatal("Could not allocate memory for statistics counter\n");
+    }
+    bzero((void*)&stats_mem[thread_id],sizeof(stat_t) * stats_len);
+
 
     ch_log_debug3("Running worker thread\n");
     while(!stop_signal){
@@ -85,6 +96,26 @@ void* run_thread( void* p)
             BARRIER(); //Make sure there is no memory reordering here
 
             votes_count[thread_id]++;
+            BARRIER();
+
+            struct timeval ts_end   = {0};
+            gettimeofday(&ts_end, NULL);
+            const i64 ts_end_us = ts_end.tv_sec * 1000 * 1000 + ts_end.tv_usec;
+
+            stats_mem[thread_id][stats_idx].time_end   = ts_end_us;
+            stats_mem[thread_id][stats_idx].thread_id  = thread_id;
+            stats_mem[thread_id][stats_idx].time_start = msg->ts;
+            stats_mem[thread_id][stats_idx].client_id  = msg->src_hostid;
+            stats_mem[thread_id][stats_idx].c_rtos     = msg->c_rto;
+            stats_mem[thread_id][stats_idx].s_rtos     = msg->s_rto;
+
+            stats_idx++;
+            if(stats_idx > stats_len){
+                stop_signal = 1;
+                BARRIER();
+                break;
+            }
+
             ch_log_debug2("Q2PC Server: [%li] Vote count=%li\n", thread_id,votes_count[thread_id]);
 
         }

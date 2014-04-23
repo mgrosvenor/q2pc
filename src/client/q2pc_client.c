@@ -140,7 +140,7 @@ static q2pc_msg* get_messge(i64 wait_usecs)
 }
 
 
-static void send_response(q2pc_msg_type_t msg_type)
+static void send_response(q2pc_msg_type_t msg_type, q2pc_msg* old_msg)
 {
     char* data;
     i64 len;
@@ -155,6 +155,9 @@ static void send_response(q2pc_msg_type_t msg_type)
     q2pc_msg* msg = (q2pc_msg*)data;
     msg->type       = msg_type;
     msg->src_hostid = client_num;
+    msg->s_rto      = old_msg->s_rto;
+    msg->c_rto      = old_msg->c_rto;
+    msg->ts         = old_msg->ts;
 
     //Commit it
     for(int rtos = 0; rtos < RTOS_MAX; ){
@@ -195,12 +198,12 @@ static int do_phase1(i64 timeout)
 
         if(vote_yes){
             ch_log_debug2("Q2PC Client: [M]--> vote yes\n");
-            send_response(q2pc_vote_yes_msg);
+            send_response(q2pc_vote_yes_msg, msg);
             break;
         }
         else{
             ch_log_debug2("Q2PC Client: [M]--> vote no\n");
-            send_response(q2pc_vote_no_msg);
+            send_response(q2pc_vote_no_msg, msg);
             break;
         }
     default:
@@ -225,13 +228,13 @@ static int do_phase2(i64 timeout)
     switch(msg->type){
     case q2pc_commit_msg:
         ch_log_debug2("Q2PC Client: [M]<-- commit\n");
-        send_response(q2pc_ack_msg);
+        send_response(q2pc_ack_msg, msg);
         ch_log_debug2("Q2PC Client: [M]--> ack\n");
         result = 0;
         break;
     case q2pc_cancel_msg:
         ch_log_debug2("Q2PC Client: [M]<-- cancel\n");
-        send_response(q2pc_ack_msg);
+        send_response(q2pc_ack_msg, msg);
         ch_log_debug2("Q2PC Client: [M]--> ack\n");
         result = 1;
         break;

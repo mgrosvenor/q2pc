@@ -38,6 +38,8 @@ typedef struct {
     char* read_data;
     i64 read_data_len;
 
+    char* write_data;
+
     pthread_mutex_t mutex;
 
     struct timeval ts_start;
@@ -161,6 +163,8 @@ static int conn_beg_write(struct q2pc_trans_conn_s* this, char** data_o, i64* le
 
     (*data_o) += sizeof(priv->seq_no);
     (*len_o)  -= sizeof(priv->seq_no);
+    priv->write_data = (*data_o);
+
 
     return Q2PC_ENONE;
 }
@@ -209,7 +213,16 @@ static int conn_end_write(struct q2pc_trans_conn_s* this, i64 len)
 
     ch_log_debug3("Time now %li > %li (diff=%li > %li)\n", priv->ts_now_us, priv->ts_start_us, priv->ts_now_us - priv->ts_start_us, priv->rto_timeout_us);
 
-    ch_log_warn("Retransmit timeout fired on seq_no=%lu\n", priv->seq_no);
+    //ch_log_warn("Retransmit timeout fired on seq_no=%lu\n", priv->seq_no);
+
+    //XXX HACK!
+    if(priv->is_server){
+        ((q2pc_msg*)priv->write_data)->c_rto++;
+    }
+    else{
+        ((q2pc_msg*)priv->write_data)->s_rto++;
+    }
+
     int result = priv->base.end_write(&priv->base, len + sizeof(priv->seq_no));
     if(result){
         ch_log_warn("Base stream returned error %li\n", result);

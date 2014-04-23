@@ -43,6 +43,7 @@ static struct {
 	i64 waittime;
 	i64 rto_us;
 	i64 report_int;
+	i64 stats_len;
 
 } options;
 
@@ -61,25 +62,23 @@ int main(int argc, char** argv)
     ch_opt_addbi(CH_OPTION_FLAG,    'u',"udp-ln","Use Linux based UDP transport [default]", &options.trans_udp_ln, false);
     ch_opt_addbi(CH_OPTION_FLAG,    't',"tcp-ln","Use Linux based TCP transport", &options.trans_tcp_ln, false);
     ch_opt_addbi(CH_OPTION_FLAG,    'r',"rdp-ln","Use Linux based UDP transport with reliability", &options.trans_rdp_ln, false);
-    ch_opt_addbi(CH_OPTION_FLAG,    'Q',"udp-qj","Use NetMap based UDP transport over Q-Jump", &options.trans_udp_qj, false);
+    ch_opt_addbi(CH_OPTION_FLAG,    'q',"udp-qj","Use NetMap based UDP transport over Q-Jump", &options.trans_udp_qj, false);
 
     //Qjump Transport options
     ch_opt_addii(CH_OPTION_OPTIONAL,'p',"port","Port to use for all transports", &options.port, 7331);
     ch_opt_addsi(CH_OPTION_OPTIONAL,'B',"broadcast","The broadcast IP address to use in UDP mode ini x.x.x.x format", &options.bcast, "127.0.0.0");
-    ch_opt_addii(CH_OPTION_OPTIONAL,'E',"qjump-epoch", "The Q-Jump epoch in microseconds", &options.qjump_epoch, 100 );
-    ch_opt_addii(CH_OPTION_OPTIONAL,'P',"qjump-psize", "The Q-Jump packet size in bytes", &options.qjump_psize, 64 );
     ch_opt_addsi(CH_OPTION_OPTIONAL,'i',"iface","The interface name to use", &options.iface, "eth4");
     //Q2PC Logging
     ch_opt_addbi(CH_OPTION_FLAG,     'n', "no-colour",  "Turn off colour log output",     &options.log_no_colour, false);
-//    ch_opt_addbi(CH_OPTION_FLAG,     '0', "log-stdout", "Log to standard out", 	 	&options.log_stdout, 	false);
-//    ch_opt_addbi(CH_OPTION_FLAG,     '1', "log-stderr", "Log to standard error [default]", 	&options.log_stderr, 	false);
-//    ch_opt_addbi(CH_OPTION_FLAG,     'S', "log-syslog", "Log to system log",         &options.log_syslog,	false);
-//    ch_opt_addsi(CH_OPTION_OPTIONAL, 'F', "log-file",   "Log to the file supplied",	&options.log_filename, 	NULL);
+    ch_opt_addbi(CH_OPTION_FLAG,     '0', "log-stdout", "Log to standard out", 	 	&options.log_stdout, 	false);
+    ch_opt_addbi(CH_OPTION_FLAG,     '1', "log-stderr", "Log to standard error [default]", 	&options.log_stderr, 	false);
+    ch_opt_addsi(CH_OPTION_OPTIONAL, 'F', "log-file",   "Log to the file supplied",	&options.log_filename, 	NULL);
     ch_opt_addii(CH_OPTION_OPTIONAL, 'v', "log-level",  "Log level verbosity (0 = lowest, 6 = highest)",  &options.log_verbosity, CH_LOG_LVL_INFO);
 
     ch_opt_addii(CH_OPTION_OPTIONAL, 'w',"wait","How long to wait for client/server delay (us)", &options.waittime, 2000 * 1000);
     ch_opt_addii(CH_OPTION_OPTIONAL, 'o',"rto", "How long to wait before retransmitting a request (us)", &options.rto_us, 200 * 1000);
-    ch_opt_addii(CH_OPTION_OPTIONAL, 'S',"stats", "reporting interval for statistics", &options.report_int, 100);
+    ch_opt_addii(CH_OPTION_OPTIONAL, 'R',"report-int", "reporting interval for statistics", &options.report_int, 100);
+    ch_opt_addii(CH_OPTION_OPTIONAL, 'S',"stats-len", "length of stats to keep", &options.stats_len, 1000);
     //Parse it all up
     ch_opt_parse(argc,argv);
 
@@ -181,7 +180,7 @@ int main(int argc, char** argv)
         run_client(&transport, options.client_id, options.waittime);
     }
     else{
-        run_server(options.threads, options.server,&transport, options.waittime, options.report_int);
+        run_server(options.threads, options.server,&transport, options.waittime, options.report_int, options.stats_len);
     }
 
     return 0;

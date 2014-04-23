@@ -22,8 +22,12 @@ typedef enum {
 } q2pc_msg_type_t;
 
 typedef struct __attribute__((__packed__)) {
-    i32 type;
-    i32 src_hostid;
+    i16 type;
+    i16 src_hostid;
+    i16 c_rto;
+    i16 s_rto;
+    i64 ts;
+
 } q2pc_msg;
 
 #endif /* Q2PC_PROTOCOL_H_ */
