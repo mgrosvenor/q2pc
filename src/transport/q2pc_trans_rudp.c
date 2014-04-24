@@ -202,7 +202,10 @@ static int conn_end_write(struct q2pc_trans_conn_s* this, i64 len)
     if(priv->is_server) {
         char* rd_data;
         i64 rd_len;
-        conn_beg_read(this,&rd_data,&rd_len);
+        int result = conn_beg_read(this,&rd_data,&rd_len);
+        if(result == Q2PC_EFIN){
+            return result;
+        }
     }
 
     if(priv->current_seq != priv->seq_no){
