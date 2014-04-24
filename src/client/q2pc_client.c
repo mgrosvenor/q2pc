@@ -251,11 +251,11 @@ static int do_phase2(i64 timeout)
 void run_client(const transport_s* transport, i64 client_id, i64 wait_time, i64 msize)
 {
     client_num = client_id;
-    init(transport);
     vote_count = client_id; //XXX HACK
     msg_size  = MAX(msize, (i64)sizeof(q2pc_msg));
     ch_log_info("Using message size of %li\n", msg_size);
 
+    init(transport);
 
     while(1){
         do_phase1(-1);
