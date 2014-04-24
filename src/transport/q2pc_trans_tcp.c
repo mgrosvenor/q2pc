@@ -41,17 +41,7 @@ typedef struct {
 } q2pc_tcp_conn_priv;
 
 
-i64 delimit(char* buff, i64 len)
-{
-    (void)buff;
-
-    if(len >= (i64)sizeof(q2pc_msg)){
-        return (i64)sizeof(q2pc_msg);
-    }
-
-    return 0;
-}
-
+i64 delimit(char* buff, i64 len);
 
 
 static int conn_beg_read(struct q2pc_trans_conn_s* this, char** data_o, i64* len_o)

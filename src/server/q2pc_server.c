@@ -254,6 +254,16 @@ void server_init(const i64 thread_count, const i64 c_count, const transport_s* t
 
 }
 
+i64 delimit(char* buff, i64 len)
+{
+    (void)buff;
+
+    if(len >= msg_size){
+        return msg_size;
+    }
+
+    return 0;
+}
 
 
 
