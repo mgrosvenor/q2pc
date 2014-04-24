@@ -75,9 +75,12 @@ static int conn_beg_read(struct q2pc_trans_conn_s* this, char** data_o, i64* len
 
     int result = priv->base.beg_read(&priv->base,data_o, len_o);
     if(result){
-        if(result != Q2PC_EAGAIN){
-            ch_log_warn("Base stream returned error %li\n", result);
+
+        if(result == Q2PC_EFIN){
+            return Q2PC_EFIN;
         }
+
+        ch_log_warn("Base stream returned error %li\n", result);
 
         //ch_log_warn("No data exit\n");
         priv->base.end_read(&priv->base);
