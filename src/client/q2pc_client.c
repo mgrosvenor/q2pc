@@ -86,7 +86,7 @@ static void init(const transport_s* transport)
                     total_rtos++;
                     continue;
                 case Q2PC_EFIN:
-                    ch_log_warn("Cannot read any more from closed stream\n");
+                    ch_log_warn("Cannot write any more from closed stream\n");
                     term(0);
                     break;
                 default:
@@ -123,6 +123,9 @@ static q2pc_msg* get_messge(i64 wait_usecs)
 
     i64 result = Q2PC_EAGAIN;
     while(result == Q2PC_EAGAIN){
+
+        ch_log_error("q28923q89213897123\n");
+
         result = conn.beg_read(&conn,&data, &len);
         if( result != Q2PC_EAGAIN) { ch_log_warn("Returning %i\n", result); }
 
