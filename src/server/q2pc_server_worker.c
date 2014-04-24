@@ -28,7 +28,7 @@ extern volatile bool pause_signal;
 //static i64 real_thread_count            = 0;
 extern volatile i64* votes_scoreboard ;
 extern volatile i64* votes_count;
-extern volatile stat_t** stats_mem;
+extern stat_t** stats_mem;
 //static q2pc_trans* trans                = NULL;
 //static volatile i64 seq_no              = 0;
 
@@ -47,11 +47,11 @@ void* run_thread( void* p)
 
     i64 stats_idx = 0;
 
+    //ch_log_debug1("Allocating ")
     stats_mem[thread_id] = calloc(stats_len, sizeof(stat_t));
     if(!stats_mem[thread_id]){
         ch_log_fatal("Could not allocate %liB of memory for statistics counter\n", sizeof(stat_t) * stats_len);
     }
-    bzero((void*)stats_mem[thread_id],sizeof(stat_t) * stats_len);
 
 
     ch_log_debug3("Running worker thread\n");
@@ -112,9 +112,10 @@ void* run_thread( void* p)
 
 
             stats_idx++;
-            if(stats_idx > stats_len){
+            if(stats_idx >= stats_len){
                 stop_signal = 1;
                 BARRIER();
+                ch_log_warn("Run out of stats memory in thread %li Exiting\n", thread_id);
                 break;
             }
 

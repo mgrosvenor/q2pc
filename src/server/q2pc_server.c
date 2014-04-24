@@ -96,7 +96,11 @@ void cleanup()
                     stats_mem[i][j].type);
             write(fd,tmp_line, len);
         }
+
+        free((void*)stats_mem[i]);
     }
+
+    free(stats_mem);
     ch_log_info("Writing stats to file...Done.\n");
 
     close(fd);
@@ -195,12 +199,6 @@ void server_init(const i64 thread_count, const i64 c_count, const transport_s* t
     }
     bzero((void*)conn_rtofired_count,sizeof(i64) * client_count);
 
-    posix_memalign((void*)&stats_mem, sizeof(stat_t*), sizeof(stat_t*) * thread_count);
-    if(!stats_mem){
-        ch_log_fatal("Could not allocate memory for stats arrays fired counter\n");
-    }
-    bzero((void*)stats_mem,sizeof(stat_t*) * thread_count);
-
 
     //Set up all the connections
     ch_log_info("Waiting for clients to connect...\n\r");
@@ -220,6 +218,14 @@ void server_init(const i64 thread_count, const i64 c_count, const transport_s* t
         ch_log_fatal("Could not allocate memory for votes counter\n");
     }
     bzero((void*)votes_count,sizeof(i64) * real_thread_count);
+
+
+    ch_log_debug1("Allocating stats mem for %li threads with size %i\n", real_thread_count, sizeof(stat_t*));
+    stats_mem = calloc(real_thread_count, sizeof(stat_t*));
+    if(!stats_mem){
+        ch_log_fatal("Could not allocate memory for stats arrays fired counter\n");
+    }
+    bzero((void*)stats_mem,sizeof(stat_t*) * real_thread_count);
 
 
     //Fire up the threads
