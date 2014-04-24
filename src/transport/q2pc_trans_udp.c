@@ -132,7 +132,7 @@ static int conn_end_write(struct q2pc_trans_conn_s* this, i64 len)
             }
 
             if(errno == ECONNREFUSED){
-                ch_log_warn("UDP end write EFIN\n");
+                ch_log_debug3("UDP end write EFIN\n");
                 return Q2PC_EFIN;
             }
 

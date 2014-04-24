@@ -77,7 +77,7 @@ static int conn_beg_read(struct q2pc_trans_conn_s* this, char** data_o, i64* len
     if(result){
 
         if(result == Q2PC_EFIN){
-            ch_log_warn("RUDP beg read EFIN\n");
+            ch_log_debug3("RUDP beg read EFIN\n");
         }
 
         if(result != Q2PC_EAGAIN && result != Q2PC_EFIN){
@@ -236,7 +236,7 @@ static int conn_end_write(struct q2pc_trans_conn_s* this, i64 len)
     if(result){
 
         if(result == Q2PC_EFIN){
-            ch_log_warn("RUDP end write EFIN\n");
+            ch_log_debug3("RUDP end write EFIN\n");
             return Q2PC_EFIN;
         }
 
