@@ -20,12 +20,15 @@ static q2pc_trans_conn conn = {0};
 static i64 client_num       = -1;
 static u64 vote_count       = 0;
 static i64 msg_size         = 0;
+static i64 total_rtos       = 0;
 #define RTOS_MAX (20LL)
 
 static void term(int signo)
 {
     ch_log_info("Terminating...\n");
     (void)signo;
+
+    ch_log_info("Total RTOS fired=%li\n", total_rtos);
 
     if(trans){ trans->delete(trans); }
     //if(conn.priv) { conn.delete(&conn); }
@@ -79,6 +82,7 @@ static void init(const transport_s* transport)
                     continue;
                 case Q2PC_RTOFIRED:
                     rtos++;
+                    total_rtos++;
                     continue;
                 default:
                     ch_log_fatal("Unexpected return value from connection (%li)\n", result);
