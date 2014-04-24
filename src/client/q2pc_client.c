@@ -150,7 +150,7 @@ static void send_response(q2pc_msg_type_t msg_type, q2pc_msg* old_msg)
     }
 
     if(len < msg_size){
-        ch_log_fatal("Not enough space to send a Q2PC message. Needed %li, but found %li\n", sizeof(q2pc_msg), len);
+        ch_log_fatal("Not enough space to send a Q2PC message. Needed %li, but found %li\n", msg_size, len);
     }
 
     q2pc_msg* msg = (q2pc_msg*)data;
@@ -162,7 +162,7 @@ static void send_response(q2pc_msg_type_t msg_type, q2pc_msg* old_msg)
 
     //Commit it
     for(int rtos = 0; rtos < RTOS_MAX; ){
-        int result = conn.end_write(&conn, sizeof(q2pc_msg));
+        int result = conn.end_write(&conn, msg_size);
 
         if(result == Q2PC_ENONE){
             break; //Can't do this inside the switch! :-P
