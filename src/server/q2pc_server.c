@@ -518,8 +518,6 @@ q2pc_commit_status_t do_phase2(q2pc_commit_status_t phase1_status, i64 cluster_t
 
 void run_server(const i64 thread_count, const i64 client_count,  const transport_s* transport, i64 wait_time, i64 report_int, i64 stats_len, i64 msize)
 {
-    //Set up all the threads, scoreboard, transport connections etc.
-    server_init(thread_count, client_count, transport, stats_len);
 
     //Statistics keeping
     struct timeval ts_start = {0};
@@ -528,6 +526,9 @@ void run_server(const i64 thread_count, const i64 client_count,  const transport
     i64 ts_now_us           = 0;
     msg_size                = MAX((i64)sizeof(q2pc_msg),msize);
     ch_log_info("Using message size of %li\n", msg_size);
+
+    //Set up all the threads, scoreboard, transport connections etc.
+    server_init(thread_count, client_count, transport, stats_len);
 
     gettimeofday(&ts_start, NULL);
     ts_start_us = ts_start.tv_sec * 1000 * 1000 + ts_start.tv_usec;
