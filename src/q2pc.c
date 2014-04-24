@@ -30,6 +30,7 @@ static struct {
 	i64 qjump_epoch;
 	i64 qjump_psize;
 	char* iface;
+	i64 msize;
 
 	//Logging options
 	bool log_no_colour;
@@ -68,6 +69,8 @@ int main(int argc, char** argv)
     ch_opt_addii(CH_OPTION_OPTIONAL,'p',"port","Port to use for all transports", &options.port, 7331);
     ch_opt_addsi(CH_OPTION_OPTIONAL,'B',"broadcast","The broadcast IP address to use in UDP mode ini x.x.x.x format", &options.bcast, "127.0.0.0");
     ch_opt_addsi(CH_OPTION_OPTIONAL,'i',"iface","The interface name to use", &options.iface, "eth4");
+    ch_opt_addii(CH_OPTION_OPTIONAL,'m',"message-size","Size of the messages to use", &options.msize, 128);
+
     //Q2PC Logging
     ch_opt_addbi(CH_OPTION_FLAG,     'n', "no-colour",  "Turn off colour log output",     &options.log_no_colour, false);
     ch_opt_addbi(CH_OPTION_FLAG,     '0', "log-stdout", "Log to standard out", 	 	&options.log_stdout, 	false);
@@ -157,6 +160,7 @@ int main(int argc, char** argv)
     transport.bcast         = options.bcast;
     transport.iface         = options.iface;
     transport.rto_us        = options.rto_us;
+    transport.msize         = options.msize;
 
 
     //Configure application options
@@ -177,10 +181,10 @@ int main(int argc, char** argv)
     //real work begins here:
     /********************************************************/
     if(options.client){
-        run_client(&transport, options.client_id, options.waittime);
+        run_client(&transport, options.client_id, options.waittime, options.msize);
     }
     else{
-        run_server(options.threads, options.server,&transport, options.waittime, options.report_int, options.stats_len);
+        run_server(options.threads, options.server,&transport, options.waittime, options.report_int, options.stats_len, options.msize);
     }
 
     return 0;

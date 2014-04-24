@@ -19,6 +19,7 @@ static q2pc_trans* trans    = NULL;
 static q2pc_trans_conn conn = {0};
 static i64 client_num       = -1;
 static u64 vote_count       = 0;
+static i64 msg_size         = 0;
 #define RTOS_MAX (20LL)
 
 static void term(int signo)
@@ -59,8 +60,8 @@ static void init(const transport_s* transport)
             continue;
         }
 
-        if(len < (i64)sizeof(q2pc_msg)){
-            ch_log_fatal("Message buffer is smaller than Q2PC message needs be. (%li<%li)\n", len, sizeof(q2pc_msg));
+        if(len < msg_size){
+            ch_log_fatal("Message buffer is smaller than Q2PC message needs be. (%li<%li)\n", len, msg_size);
         }
 
         q2pc_msg* msg   = (q2pc_msg*)data;
@@ -69,7 +70,7 @@ static void init(const transport_s* transport)
 
         //Wait around a bit for the connection to be established
         for(int rtos = 0; /*rtos < RTOS_MAX*/; ){ //Wait forever
-            int result = conn.end_write(&conn, sizeof(q2pc_msg));
+            int result = conn.end_write(&conn, msg_size);
 
             if(result == Q2PC_ENONE){ break; } //Can't do this inside the switch! :-P
 
@@ -148,7 +149,7 @@ static void send_response(q2pc_msg_type_t msg_type, q2pc_msg* old_msg)
         ch_log_fatal("Could not complete message request\n");
     }
 
-    if(len < (i64)sizeof(q2pc_msg)){
+    if(len < msg_size){
         ch_log_fatal("Not enough space to send a Q2PC message. Needed %li, but found %li\n", sizeof(q2pc_msg), len);
     }
 
@@ -247,11 +248,13 @@ static int do_phase2(i64 timeout)
 }
 
 
-void run_client(const transport_s* transport, i64 client_id, i64 wait_time)
+void run_client(const transport_s* transport, i64 client_id, i64 wait_time, i64 msize)
 {
     client_num = client_id;
     init(transport);
     vote_count = client_id; //XXX HACK
+    msg_size  = MAX(msize, (i64)sizeof(q2pc_msg));
+
 
     while(1){
         do_phase1(-1);

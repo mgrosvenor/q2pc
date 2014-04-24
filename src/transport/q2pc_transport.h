@@ -27,6 +27,7 @@ typedef struct {
     char* bcast;
     char* iface;
     i64 rto_us;
+    i64 msize;
 
 } transport_s;
 

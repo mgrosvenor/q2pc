@@ -39,6 +39,7 @@ static i64 real_thread_count     = 0;
 static q2pc_trans* trans         = NULL;
 static i64 client_count          = 0;
 static i64* conn_rtofired_count  = NULL;
+static i64 msg_size              = 0;
 
 static transport_e trans_type    = -1;
 static i64 stats_len             = 0;
@@ -151,8 +152,8 @@ void do_connectall()
                 continue;
             }
 
-            if(len < (i64)sizeof(q2pc_msg)){
-                ch_log_fatal("Message is smaller than Q2PC message should be. (%li<%li)\n", len, sizeof(q2pc_msg));
+            if(len < msg_size){
+                ch_log_fatal("Message is smaller than Q2PC message should be. (%li<%li)\n", len, msg_size);
             }
 
             q2pc_msg* msg = (q2pc_msg*)data;
@@ -270,8 +271,8 @@ static void send_request(q2pc_msg_type_t msg_type)
             ch_log_fatal("Could not complete broadcast message request\n");
         }
 
-        if(len < (i64)sizeof(q2pc_msg)){
-            ch_log_fatal("Not enough space to send a Q2PC message. Needed %li, but found %li\n", sizeof(q2pc_msg), len);
+        if(len < msg_size){
+            ch_log_fatal("Not enough space to send a Q2PC message. Needed %li, but found %li\n", msg_size, len);
         }
 
         struct timeval ts_start   = {0};
@@ -286,7 +287,7 @@ static void send_request(q2pc_msg_type_t msg_type)
         msg->s_rto      = 0;
         msg->c_rto      = 0;
 
-        conn->end_write(conn, sizeof(q2pc_msg));
+        conn->end_write(conn, msg_size);
         return;
     }
 
@@ -300,8 +301,8 @@ static void send_request(q2pc_msg_type_t msg_type)
             ch_log_fatal("Could not complete broadcast message request\n");
         }
 
-        if(len < (i64)sizeof(q2pc_msg)){
-            ch_log_fatal("Not enough space to send a Q2PC message. Needed %li, but found %li\n", sizeof(q2pc_msg), len);
+        if(len < msg_size){
+            ch_log_fatal("Not enough space to send a Q2PC message. Needed %li, but found %li\n", msg_size, len);
         }
 
         struct timeval ts_start   = {0};
@@ -332,7 +333,7 @@ static void send_request(q2pc_msg_type_t msg_type)
 
             q2pc_trans_conn* conn = cons->first + i;
 
-            int result = conn->end_write(conn, sizeof(q2pc_msg));
+            int result = conn->end_write(conn, msg_size);
             switch (result) {
                 case Q2PC_RTOFIRED:
                     if(conn_rtofired_count[i] >= MAX_RTOS){ //HACK MAGIC NUMBER!
@@ -515,7 +516,7 @@ q2pc_commit_status_t do_phase2(q2pc_commit_status_t phase1_status, i64 cluster_t
 
 }
 
-void run_server(const i64 thread_count, const i64 client_count,  const transport_s* transport, i64 wait_time, i64 report_int, i64 stats_len)
+void run_server(const i64 thread_count, const i64 client_count,  const transport_s* transport, i64 wait_time, i64 report_int, i64 stats_len, i64 msize)
 {
     //Set up all the threads, scoreboard, transport connections etc.
     server_init(thread_count, client_count, transport, stats_len);
@@ -525,6 +526,7 @@ void run_server(const i64 thread_count, const i64 client_count,  const transport
     struct timeval ts_now   = {0};
     i64 ts_start_us         = 0;
     i64 ts_now_us           = 0;
+    msg_size                = MAX((i64)sizeof(q2pc_msg),msize);
 
     gettimeofday(&ts_start, NULL);
     ts_start_us = ts_start.tv_sec * 1000 * 1000 + ts_start.tv_usec;
