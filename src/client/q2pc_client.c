@@ -133,7 +133,7 @@ static q2pc_msg* get_messge(i64 wait_usecs)
         }
 
         if(result == Q2PC_EFIN){
-            ch_log_warn("Server quit\n");
+            ch_log_warn("Server has quit. Cannot read\n");
             conn.end_read(&conn);
             return NULL;
         }
@@ -193,6 +193,9 @@ static void send_response(q2pc_msg_type_t msg_type, q2pc_msg* old_msg)
         case Q2PC_RTOFIRED:
             rtos++;
             continue;
+        case Q2PC_EFIN:
+            ch_log_error("Stream has ended. Cannot write\n");
+            term(0);
         default:
             ch_log_error("Unexpected value (%li)\n", result);
             term(0);
