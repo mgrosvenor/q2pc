@@ -124,6 +124,7 @@ static q2pc_msg* get_messge(i64 wait_usecs)
     i64 result = Q2PC_EAGAIN;
     while(result == Q2PC_EAGAIN){
         result = conn.beg_read(&conn,&data, &len);
+        if( result != Q2PC_EAGAIN) { ch_log_warn("Returning %i\n", result); }
 
         if(result == Q2PC_ENONE){
             q2pc_msg* msg = (q2pc_msg*)data;
