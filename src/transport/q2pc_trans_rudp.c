@@ -76,6 +76,10 @@ static int conn_beg_read(struct q2pc_trans_conn_s* this, char** data_o, i64* len
     int result = priv->base.beg_read(&priv->base,data_o, len_o);
     if(result){
 
+        if(result == Q2PC_EFIN){
+            ch_log_warn("RUDP beg read EFIN\n");
+        }
+
         if(result != Q2PC_EAGAIN && result != Q2PC_EFIN){
             ch_log_warn("Base stream returned error %li\n", result);
         }
@@ -228,6 +232,7 @@ static int conn_end_write(struct q2pc_trans_conn_s* this, i64 len)
     if(result){
 
         if(result == Q2PC_EFIN){
+            ch_log_warn("RUDP end write EFIN\n");
             return Q2PC_EFIN;
         }
 
