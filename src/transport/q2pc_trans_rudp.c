@@ -87,7 +87,6 @@ static int conn_beg_read(struct q2pc_trans_conn_s* this, char** data_o, i64* len
         //ch_log_warn("No data exit\n");
         priv->base.end_read(&priv->base);
         //pthread_mutex_unlock(&priv->mutex);
-        if( result != Q2PC_EAGAIN) { ch_log_warn("Returning %i\n", result); }
         return result;
     }
 
