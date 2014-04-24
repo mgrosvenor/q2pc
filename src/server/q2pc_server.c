@@ -527,6 +527,7 @@ void run_server(const i64 thread_count, const i64 client_count,  const transport
     i64 ts_start_us         = 0;
     i64 ts_now_us           = 0;
     msg_size                = MAX((i64)sizeof(q2pc_msg),msize);
+    ch_log_info("Using message size of %li\n", msg_size);
 
     gettimeofday(&ts_start, NULL);
     ts_start_us = ts_start.tv_sec * 1000 * 1000 + ts_start.tv_usec;
