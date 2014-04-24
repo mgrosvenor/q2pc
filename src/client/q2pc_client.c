@@ -124,8 +124,6 @@ static q2pc_msg* get_messge(i64 wait_usecs)
     i64 result = Q2PC_EAGAIN;
     while(result == Q2PC_EAGAIN){
 
-        ch_log_error("q28923q89213897123\n");
-
         result = conn.beg_read(&conn,&data, &len);
         if( result != Q2PC_EAGAIN) { ch_log_warn("Returning %i\n", result); }
 
