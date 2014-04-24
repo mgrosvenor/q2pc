@@ -116,6 +116,7 @@ void* run_thread( void* p)
                 stop_signal = 1;
                 BARRIER();
                 ch_log_warn("Run out of stats memory in thread %li Exiting\n", thread_id);
+                usleep(1000); //A a bit for the signal to propagate
                 break;
             }
 
@@ -124,7 +125,7 @@ void* run_thread( void* p)
         }
     }
 
-    sleep(4);
+
 
     ch_log_debug3("Cleaning up connections...\n");
     //We're done with the connections now, clean them up

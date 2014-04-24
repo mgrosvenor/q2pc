@@ -292,7 +292,7 @@ static void send_request(q2pc_msg_type_t msg_type)
 
 
     //First, collect all the buffers
-    for(int i = 0; i < client_count; i++){
+    for(int i = 0; i < client_count && !stop_signal; i++){
 
         q2pc_trans_conn* conn = cons->first + i;
 
@@ -321,8 +321,8 @@ static void send_request(q2pc_msg_type_t msg_type)
     int commited = 0;
     bzero(conn_rtofired_count,sizeof(i64) * client_count);
 
-    while(commited < client_count){
-        for(int i = 0; i < client_count; i++){
+    while(commited < client_count && !stop_signal){
+        for(int i = 0; i < client_count && !stop_signal; i++){
 
             //This is naughty, I'm overloading this, with negative numbers meaning the value is sent
             if(conn_rtofired_count[i] < 0LL){
@@ -414,7 +414,7 @@ q2pc_commit_status_t do_phase1(i64 cluster_timeout_us)
 
     //Stop all the receiver threads
     dopause_all();
-    for(int i = 0; i < client_count; i++){
+    for(int i = 0; i < client_count && !stop_signal; i++){
         __builtin_prefetch((char*)votes_scoreboard + i + 1);
         switch(votes_scoreboard[i]){
             case q2pc_vote_yes_msg:
@@ -476,7 +476,7 @@ q2pc_commit_status_t do_phase2(q2pc_commit_status_t phase1_status, i64 cluster_t
     //Stop all the receiver threads
     dopause_all();
     q2pc_commit_status_t result = q2pc_commit_success;
-    for(int i = 0; i < client_count; i++){
+    for(int i = 0; i < client_count && !stop_signal; i++){
         __builtin_prefetch((char*)votes_scoreboard + i + 1);
 
         switch(votes_scoreboard[i]){
