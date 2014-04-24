@@ -109,7 +109,7 @@ static q2pc_msg* get_messge(i64 wait_usecs)
 {
     char* data = NULL;
     i64 len = 0;
-    i64 result = Q2PC_EAGAIN;
+
 
     struct timeval ts_start = {0};
     struct timeval ts_now = {0};
@@ -119,8 +119,9 @@ static q2pc_msg* get_messge(i64 wait_usecs)
     gettimeofday(&ts_start, NULL);
     ts_start_us = ts_start.tv_sec * 1000 * 1000 + ts_start.tv_usec;
 
-
     ch_log_debug3("Waiting for new requests...\n");
+
+    i64 result = Q2PC_EAGAIN;
     while(result == Q2PC_EAGAIN){
         result = conn.beg_read(&conn,&data, &len);
 
