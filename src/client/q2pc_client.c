@@ -64,7 +64,8 @@ static void init(const transport_s* transport)
         }
 
         if(len < msg_size){
-            ch_log_fatal("Message buffer is smaller than Q2PC message needs be. (%li<%li)\n", len, msg_size);
+            ch_log_error("Message buffer is smaller than Q2PC message needs be. (%li<%li)\n", len, msg_size);
+            term(0);
         }
 
         q2pc_msg* msg   = (q2pc_msg*)data;
@@ -84,8 +85,13 @@ static void init(const transport_s* transport)
                     rtos++;
                     total_rtos++;
                     continue;
+                case Q2PC_EFIN:
+                    ch_log_warn("Cannot read any more from closed stream\n");
+                    term(0);
+                    break;
                 default:
-                    ch_log_fatal("Unexpected return value from connection (%li)\n", result);
+                    ch_log_error("Unexpected return value from connection (%i)\n", result);
+                    term(0);
             }
         }
 
@@ -149,8 +155,15 @@ static void send_response(q2pc_msg_type_t msg_type, q2pc_msg* old_msg)
 {
     char* data;
     i64 len;
-    if(conn.beg_write(&conn,&data,&len)){
-        ch_log_fatal("Could not complete message request\n");
+    int result = conn.beg_write(&conn,&data,&len);
+    if(result){
+        if(result == Q2PC_EFIN){
+            ch_log_warn("Cannot write anymore to closed stream. Terminating\n");
+            term(0);
+        }
+
+        ch_log_error("Could not complete message request. Unknown error =%i\n", result);
+        term(0);
     }
 
     if(len < msg_size){
@@ -179,7 +192,8 @@ static void send_response(q2pc_msg_type_t msg_type, q2pc_msg* old_msg)
             rtos++;
             continue;
         default:
-            ch_log_fatal("Unexpected value (%li)\n", result);
+            ch_log_error("Unexpected value (%li)\n", result);
+            term(0);
         }
     }
 }
@@ -213,7 +227,8 @@ static int do_phase1(i64 timeout)
         }
     default:
         ch_log_debug2("Q2PC Client: [M]<-- Unknown message (%i)\n", msg->type);
-        ch_log_fatal("Protocol failure, in phase 1 unexpected message type %i\n", msg->type);
+        ch_log_error("Protocol failure, in phase 1 unexpected message type %i\n", msg->type);
+        term(0);
     }
 
     vote_count++;
@@ -244,7 +259,8 @@ static int do_phase2(i64 timeout)
         result = 1;
         break;
     default:
-        ch_log_fatal("Protocol failure, in phase 2 unexpected message type %i\n", msg->type);
+        ch_log_error("Protocol failure, in phase 2 unexpected message type %i\n", msg->type);
+        term(0);
     }
 
 

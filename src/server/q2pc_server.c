@@ -156,7 +156,8 @@ void do_connectall()
             }
 
             if(len < msg_size){
-                ch_log_fatal("Message is smaller than Q2PC message should be. (%li<%li)\n", len, msg_size);
+                ch_log_error("Message is smaller than Q2PC message should be. (%li<%li)\n", len, msg_size);
+                term(0);
             }
 
             q2pc_msg* msg = (q2pc_msg*)data;
@@ -164,7 +165,8 @@ void do_connectall()
             switch(msg->type){
                 case q2pc_con_msg: connected++; break;
                 default:
-                    ch_log_fatal("Unexpected message of type %i\n", msg->type);
+                    ch_log_error("Unexpected message of type %i\n", msg->type);
+                    term(0);
             }
 
             ch_log_debug3("Connection from %i at index %i\n", msg->src_hostid, i);
@@ -350,7 +352,8 @@ static void send_request(q2pc_msg_type_t msg_type)
             switch (result) {
                 case Q2PC_RTOFIRED:
                     if(conn_rtofired_count[i] >= MAX_RTOS){ //HACK MAGIC NUMBER!
-                        ch_log_fatal("Connection failed to client %li. Cluster failed after %li RTOS\n", i, MAX_RTOS);
+                        ch_log_error("Connection failed to client %li. Cluster failed after %li RTOS\n", i, MAX_RTOS);
+                        term(0);
                     }
                     conn_rtofired_count[i]++;
                     total_rtos++;
@@ -361,8 +364,12 @@ static void send_request(q2pc_msg_type_t msg_type)
                     conn_rtofired_count[i] = -1;
                     commited++;
                     continue;
+                case Q2PC_EFIN:
+                    ch_log_error("Cannot complete write request, cluster failed\n");
+                    term(0);
                 default:
-                    ch_log_fatal("Unexpected value (%li) from connection=%li\n", result, i);
+                    ch_log_error("Unexpected value (%li) from connection=%li\n", result, i);
+                    term(0);
             }
         }
     }
@@ -448,7 +455,8 @@ q2pc_commit_status_t do_phase1(i64 cluster_timeout_us)
 
             default:
                 ch_log_debug1("Q2PC: Server [M] phase 1 - client %li sent an unexpected message type %i\n",i,votes_scoreboard[i]);
-                ch_log_fatal("Protocol violation\n");
+                ch_log_error("Protocol violation\n");
+                term(0);
         }
     }
 
@@ -482,7 +490,8 @@ q2pc_commit_status_t do_phase2(q2pc_commit_status_t phase1_status, i64 cluster_t
         case q2pc_cluster_fail:
             return q2pc_cluster_fail;
         default:
-            ch_log_fatal("Internal error: unexpected result from phase 1\n");
+            ch_log_error("Internal error: unexpected result from phase 1\n");
+            term(0);
     }
 
     //wait for all the responses
@@ -522,7 +531,8 @@ q2pc_commit_status_t do_phase2(q2pc_commit_status_t phase1_status, i64 cluster_t
         case q2pc_request_success:  return q2pc_commit_success;
         case q2pc_request_fail:     return q2pc_commit_fail;
         default:
-            ch_log_fatal("Internal error: unexpected result from phase 1\n");
+            ch_log_error("Internal error: unexpected result from phase 1\n");
+            term(0);
     }
 
     //Unreachable
@@ -569,11 +579,12 @@ void run_server(const i64 thread_count, const i64 client_count,  const transport
         status = do_phase2(status, wait_time);
 
         switch(status){
-            case q2pc_cluster_fail:     cleanup(); ch_log_fatal("Cluster failed\n"); break;
+            case q2pc_cluster_fail:     ch_log_error("Cluster failed\n"); term(0);break;
             case q2pc_commit_success:   ch_log_debug1("Commit success!\n"); break;
             case q2pc_commit_fail:      ch_log_debug1("Commit fail!\n"); break;
             default:
-                ch_log_fatal("Internal error: unexpected result from phase 2\n");
+                ch_log_error("Internal error: unexpected result from phase 2\n");
+                term(0);
         }
     }
 

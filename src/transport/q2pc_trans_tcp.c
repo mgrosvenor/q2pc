@@ -57,6 +57,10 @@ static int conn_beg_read(struct q2pc_trans_conn_s* this, char** data_o, i64* len
             return Q2PC_EAGAIN; //Reading would have blocked, we don't want this
         }
 
+        if(errno == ECONNREFUSED){
+            return Q2PC_EFIN;
+        }
+
         ch_log_fatal("TCP read failed on fd=%i - %s\n",priv->fd,strerror(errno));
     }
 
@@ -245,6 +249,15 @@ static int conn_end_write(struct q2pc_trans_conn_s* this, i64 len)
     while(len > 0){
         i64 written =  write(priv->fd, data ,len);
         if(written < 0){
+
+            if(errno == EAGAIN || errno == EWOULDBLOCK){
+                continue; //Keep trying until we succeed
+            }
+
+            if(errno == ECONNREFUSED){
+                return Q2PC_EFIN;
+            }
+
             ch_log_warn("TCP write failed: %s\n",strerror(errno));
             return Q2PC_EFIN;
         }

@@ -225,7 +225,12 @@ static int conn_end_write(struct q2pc_trans_conn_s* this, i64 len)
 
     int result = priv->base.end_write(&priv->base, len + sizeof(priv->seq_no));
     if(result){
-        ch_log_warn("Base stream returned error %li\n", result);
+
+        if(result == Q2PC_EFIN){
+            return Q2PC_EFIN;
+        }
+
+        ch_log_warn("Base stream returned error %i\n", result);
     }
 
     gettimeofday(&priv->ts_start, NULL);

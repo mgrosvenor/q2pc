@@ -72,7 +72,11 @@ static int conn_beg_read(struct q2pc_trans_conn_s* this, char** data_o, i64* len
             return Q2PC_EAGAIN; //Reading would have blocked, we don't want this
         }
 
-        ch_log_fatal("udp read failed on fd=%i - %s\n",priv->fd,strerror(errno));
+        if(errno == ECONNREFUSED){
+            return Q2PC_EFIN;
+        }
+
+        ch_log_fatal("udp read failed on fd=%i with errno=%i (%s)\n",priv->fd, errno, strerror(errno));
     }
 
 
@@ -121,7 +125,16 @@ static int conn_end_write(struct q2pc_trans_conn_s* this, i64 len)
     while(len > 0){
         i64 written =  write(priv->fd, data ,len);
         if(written < 0){
-            ch_log_warn("UDP write failed: %s\n",strerror(errno));
+
+            if(errno == EAGAIN || errno == EWOULDBLOCK){
+                continue; //Keep trying until we succeed
+            }
+
+            if(errno == ECONNREFUSED){
+                return Q2PC_EFIN;
+            }
+
+            ch_log_warn("UDP write failed with errorno=%i: %s\n", errno, strerror(errno));
             return Q2PC_EFIN;
         }
         data += written;

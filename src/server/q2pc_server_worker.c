@@ -70,9 +70,20 @@ void* run_thread( void* p)
             char* data = NULL;
             i64 len = 0;
             i64 result = con->beg_read(con,&data, &len);
-            if(result != Q2PC_ENONE){
-                //con->end_read(con);
-                continue;
+            if(result){
+                if(result == Q2PC_EAGAIN){
+                    continue;
+                }
+
+                if(result == Q2PC_EFIN){
+                    stop_signal = 1;
+                    BARRIER();
+                    ch_log_warn("Cannot read any more data from connection %li on thread %li. Stream has finished\n", i, thread_id);
+                    usleep(1000); //A a bit for the signal to propagate
+                    break;
+
+                }
+
             }
 
             q2pc_msg* msg = (q2pc_msg*)data;
