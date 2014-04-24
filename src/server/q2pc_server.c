@@ -43,6 +43,7 @@ static i64 msg_size              = 0;
 
 static transport_e trans_type    = -1;
 static i64 stats_len             = 0;
+static i64 total_rtos            = 0;
 #define MAX_RTOS (20LL)
 
 void cleanup()
@@ -75,6 +76,8 @@ void cleanup()
     i64 time_start;
     i64 time_end;
      */
+
+    ch_log_info("Total RTOS=%li\n", total_rtos);
 
     i64 start_us = 0;
 
@@ -350,6 +353,7 @@ static void send_request(q2pc_msg_type_t msg_type)
                         ch_log_fatal("Connection failed to client %li. Cluster failed after %li RTOS\n", i, MAX_RTOS);
                     }
                     conn_rtofired_count[i]++;
+                    total_rtos++;
                     continue;
                 case Q2PC_EAGAIN:
                     continue;
