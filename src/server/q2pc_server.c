@@ -32,6 +32,7 @@ volatile i64* votes_scoreboard   = NULL;
 volatile i64* votes_count        = NULL;
 volatile stat_t** stats_mem      = NULL;
 volatile bool ack_seen           = false;
+i64 msg_size                     = 0;
 
 //File globals
 static pthread_t* threads        = NULL;
@@ -39,7 +40,7 @@ static i64 real_thread_count     = 0;
 static q2pc_trans* trans         = NULL;
 static i64 client_count          = 0;
 static i64* conn_rtofired_count  = NULL;
-static i64 msg_size              = 0;
+
 
 static transport_e trans_type    = -1;
 static i64 stats_len             = 0;
