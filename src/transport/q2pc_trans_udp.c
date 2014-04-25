@@ -73,7 +73,7 @@ static int conn_beg_read(struct q2pc_trans_conn_s* this, char** data_o, i64* len
         }
 
         if(errno == ECONNREFUSED){
-            ch_log_warn("UDP beg read EFIN\n");
+            ch_log_warn("UDP beg read EFIN (%s)\n", strerror(errno));
             return Q2PC_EFIN;
         }
 
