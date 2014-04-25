@@ -113,7 +113,7 @@ void* run_thread( void* p)
             gettimeofday(&ts_end, NULL);
             const i64 ts_end_us = ts_end.tv_sec * 1000 * 1000 + ts_end.tv_usec;
 
-            ch_log_debug3("Got ts with %i\n", msg->ts) ;
+            ch_log_debug3("Got ts with %li\n", msg->ts) ;
 
             stats_mem[thread_id][stats_idx].time_end   = ts_end_us;
             stats_mem[thread_id][stats_idx].thread_id  = thread_id;

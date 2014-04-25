@@ -128,7 +128,7 @@ static q2pc_msg* get_messge(i64 wait_usecs)
 
         if(result == Q2PC_ENONE){
             q2pc_msg* msg = (q2pc_msg*)data;
-            ch_log_debug3("Got ts with %i\n", msg->ts) ;
+            ch_log_debug3("Got ts with %li\n", msg->ts) ;
             ch_log_debug3("Got crto with %i\n", msg->c_rto) ;
             ch_log_debug3("Got srto with %i\n", msg->s_rto) ;
             conn.end_read(&conn);
@@ -182,7 +182,7 @@ static void send_response(q2pc_msg_type_t msg_type, q2pc_msg* old_msg)
     msg->c_rto      = old_msg->c_rto;
     msg->ts         = old_msg->ts;
 
-    ch_log_debug3("Sent ts with %i\n", msg->ts) ;
+    ch_log_debug3("Sent ts with %li\n", msg->ts) ;
     ch_log_debug3("Sent crto with %i\n", msg->c_rto) ;
     ch_log_debug3("Sent srto with %i\n", msg->s_rto) ;
 

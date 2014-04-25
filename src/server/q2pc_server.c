@@ -331,7 +331,7 @@ static void send_request(q2pc_msg_type_t msg_type)
         msg->ts         = ts_start_us;
         msg->s_rto      = 0;
         msg->c_rto      = 0;
-        ch_log_debug3("Set ts to %i\n", msg->ts) ;
+        ch_log_debug3("Set ts to %li\n", msg->ts) ;
 
     }
 
