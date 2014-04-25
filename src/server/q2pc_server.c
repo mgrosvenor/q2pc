@@ -45,7 +45,7 @@ static i64* conn_rtofired_count  = NULL;
 static transport_e trans_type    = -1;
 static i64 stats_len             = 0;
 static i64 total_rtos            = 0;
-#define MAX_RTOS (20LL)
+#define MAX_RTOS (200L * 1000L)
 
 void cleanup()
 {
