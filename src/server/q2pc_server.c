@@ -62,7 +62,7 @@ void cleanup()
         trans->delete(trans);
     }
 
-    int fd = open("q2pc_stats", O_WRONLY| O_CREAT | O_TRUNC,  S_IRWXU );
+    int fd = open("/tmp/q2pc_stats", O_WRONLY| O_CREAT | O_TRUNC,  S_IRWXU );
     if(fd < 0){
         ch_log_fatal("Could not open statistics output file error = %s\n", strerror(errno));
     }
