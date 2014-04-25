@@ -95,7 +95,7 @@ static int conn_beg_read(struct q2pc_trans_conn_s* this, char** data_o, i64* len
     if(priv->is_server){
         ch_log_debug3("Server got message with seq_no=%li\n", seq_no);
         if(seq_no != priv->seq_no){
-            ch_log_warn("Server dropping message with seq_no %li != %li\n", seq_no, priv->seq_no);
+            ch_log_debug1("Server dropping message with seq_no %li != %li\n", seq_no, priv->seq_no);
             priv->base.end_read(&priv->base);
             //pthread_mutex_unlock(&priv->mutex);
             return Q2PC_EAGAIN;
@@ -109,7 +109,7 @@ static int conn_beg_read(struct q2pc_trans_conn_s* this, char** data_o, i64* len
         ch_log_debug3("Client got message with seq_no=%li\n", seq_no);
 
         if(seq_no <= priv->seq_no){
-            ch_log_warn("Client dropping message with seq_no=%li <= %li\n", seq_no, priv->seq_no);
+            ch_log_debug1("Client dropping message with seq_no=%li <= %li\n", seq_no, priv->seq_no);
             priv->base.end_read(&priv->base);
             //pthread_mutex_unlock(&priv->mutex);
             return Q2PC_EAGAIN;
