@@ -156,6 +156,7 @@ static void conn_delete(struct q2pc_trans_conn_s* this)
             if(priv->read_buffer){ free(priv->read_buffer); }
             //if(priv->write_buffer){ free(priv->write_buffer); } --Not necessary since r+w are allocated together
             free(this->priv);
+            close(priv->fd);
         }
 
         //XXX HACK!

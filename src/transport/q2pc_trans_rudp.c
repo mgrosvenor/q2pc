@@ -226,9 +226,11 @@ static int conn_end_write(struct q2pc_trans_conn_s* this, i64 len)
     //XXX HACK!
     if(priv->is_server){
         ((q2pc_msg*)priv->write_data)->c_rto++;
+        ch_log_debug3("Set c_rto to %i\n", ((q2pc_msg*)priv->write_data)->c_rto) ;
     }
     else{
         ((q2pc_msg*)priv->write_data)->s_rto++;
+        ch_log_debug3("Set s_rto to %i\n", ((q2pc_msg*)priv->write_data)->s_rto) ;
     }
 
     int result = priv->base.end_write(&priv->base, len + sizeof(priv->seq_no));

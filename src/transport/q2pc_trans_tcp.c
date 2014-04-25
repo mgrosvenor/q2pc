@@ -278,6 +278,7 @@ static void conn_delete(struct q2pc_trans_conn_s* this)
             q2pc_tcp_conn_priv* priv = (q2pc_tcp_conn_priv*)this->priv;
             if(priv->read_buffer){ free(priv->read_buffer); }
             if(priv->delim_buffer){ free(priv->delim_buffer); }
+            close(priv->fd);
             free(this->priv);
         }
 
