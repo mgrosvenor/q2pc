@@ -21,7 +21,7 @@ static i64 client_num       = -1;
 static u64 vote_count       = 0;
 static i64 msg_size         = 0;
 static i64 total_rtos       = 0;
-#define RTOS_MAX (20LL)
+#define RTOS_MAX (200L * 1000L)
 
 static void term(int signo)
 {
