@@ -41,17 +41,7 @@ typedef struct {
 } q2pc_tcp_conn_priv;
 
 
-i64 delimit(char* buff, i64 len)
-{
-    (void)buff;
-
-    if(len >= (i64)sizeof(q2pc_msg)){
-        return (i64)sizeof(q2pc_msg);
-    }
-
-    return 0;
-}
-
+i64 delimit(char* buff, i64 len);
 
 
 static int conn_beg_read(struct q2pc_trans_conn_s* this, char** data_o, i64* len_o)
@@ -65,6 +55,10 @@ static int conn_beg_read(struct q2pc_trans_conn_s* this, char** data_o, i64* len
     if(result < 0){
         if(errno == EAGAIN || errno == EWOULDBLOCK){
             return Q2PC_EAGAIN; //Reading would have blocked, we don't want this
+        }
+
+        if(errno == ECONNREFUSED){
+            return Q2PC_EFIN;
         }
 
         ch_log_fatal("TCP read failed on fd=%i - %s\n",priv->fd,strerror(errno));
@@ -255,6 +249,15 @@ static int conn_end_write(struct q2pc_trans_conn_s* this, i64 len)
     while(len > 0){
         i64 written =  write(priv->fd, data ,len);
         if(written < 0){
+
+            if(errno == EAGAIN || errno == EWOULDBLOCK){
+                continue; //Keep trying until we succeed
+            }
+
+            if(errno == ECONNREFUSED){
+                return Q2PC_EFIN;
+            }
+
             ch_log_warn("TCP write failed: %s\n",strerror(errno));
             return Q2PC_EFIN;
         }
@@ -275,6 +278,7 @@ static void conn_delete(struct q2pc_trans_conn_s* this)
             q2pc_tcp_conn_priv* priv = (q2pc_tcp_conn_priv*)this->priv;
             if(priv->read_buffer){ free(priv->read_buffer); }
             if(priv->delim_buffer){ free(priv->delim_buffer); }
+            close(priv->fd);
             free(this->priv);
         }
 

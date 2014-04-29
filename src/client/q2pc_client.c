@@ -19,12 +19,16 @@ static q2pc_trans* trans    = NULL;
 static q2pc_trans_conn conn = {0};
 static i64 client_num       = -1;
 static u64 vote_count       = 0;
-#define RTOS_MAX (20LL)
+extern i64 msg_size; //HAXK! XXX This is in server.c
+static i64 total_rtos       = 0;
+#define RTOS_MAX (200L * 1000L)
 
 static void term(int signo)
 {
     ch_log_info("Terminating...\n");
     (void)signo;
+
+    ch_log_info("Total RTOS fired=%li\n", total_rtos);
 
     if(trans){ trans->delete(trans); }
     //if(conn.priv) { conn.delete(&conn); }
@@ -59,8 +63,9 @@ static void init(const transport_s* transport)
             continue;
         }
 
-        if(len < (i64)sizeof(q2pc_msg)){
-            ch_log_fatal("Message buffer is smaller than Q2PC message needs be. (%li<%li)\n", len, sizeof(q2pc_msg));
+        if(len < msg_size){
+            ch_log_error("Message buffer is smaller than Q2PC message needs be. (%li<%li)\n", len, msg_size);
+            term(0);
         }
 
         q2pc_msg* msg   = (q2pc_msg*)data;
@@ -69,7 +74,7 @@ static void init(const transport_s* transport)
 
         //Wait around a bit for the connection to be established
         for(int rtos = 0; /*rtos < RTOS_MAX*/; ){ //Wait forever
-            int result = conn.end_write(&conn, sizeof(q2pc_msg));
+            int result = conn.end_write(&conn, msg_size);
 
             if(result == Q2PC_ENONE){ break; } //Can't do this inside the switch! :-P
 
@@ -78,9 +83,15 @@ static void init(const transport_s* transport)
                     continue;
                 case Q2PC_RTOFIRED:
                     rtos++;
+                    total_rtos++;
                     continue;
+                case Q2PC_EFIN:
+                    ch_log_warn("Cannot write any more from closed stream\n");
+                    term(0);
+                    break;
                 default:
-                    ch_log_fatal("Unexpected return value from connection (%li)\n", result);
+                    ch_log_error("Unexpected return value from connection (%i)\n", result);
+                    term(0);
             }
         }
 
@@ -98,7 +109,7 @@ static q2pc_msg* get_messge(i64 wait_usecs)
 {
     char* data = NULL;
     i64 len = 0;
-    i64 result = Q2PC_EAGAIN;
+
 
     struct timeval ts_start = {0};
     struct timeval ts_now = {0};
@@ -108,19 +119,24 @@ static q2pc_msg* get_messge(i64 wait_usecs)
     gettimeofday(&ts_start, NULL);
     ts_start_us = ts_start.tv_sec * 1000 * 1000 + ts_start.tv_usec;
 
-
     ch_log_debug3("Waiting for new requests...\n");
+
+    i64 result = Q2PC_EAGAIN;
     while(result == Q2PC_EAGAIN){
+
         result = conn.beg_read(&conn,&data, &len);
 
         if(result == Q2PC_ENONE){
             q2pc_msg* msg = (q2pc_msg*)data;
+            ch_log_debug3("Got ts with %li\n", msg->ts) ;
+            ch_log_debug3("Got crto with %i\n", msg->c_rto) ;
+            ch_log_debug3("Got srto with %i\n", msg->s_rto) ;
             conn.end_read(&conn);
             return msg;
         }
 
         if(result == Q2PC_EFIN){
-            ch_log_warn("Server quit\n");
+            ch_log_warn("Server has quit. Cannot read\n");
             conn.end_read(&conn);
             return NULL;
         }
@@ -144,12 +160,19 @@ static void send_response(q2pc_msg_type_t msg_type, q2pc_msg* old_msg)
 {
     char* data;
     i64 len;
-    if(conn.beg_write(&conn,&data,&len)){
-        ch_log_fatal("Could not complete message request\n");
+    int result = conn.beg_write(&conn,&data,&len);
+    if(result){
+        if(result == Q2PC_EFIN){
+            ch_log_warn("Cannot write anymore to closed stream. Terminating\n");
+            term(0);
+        }
+
+        ch_log_error("Could not complete message request. Unknown error =%i\n", result);
+        term(0);
     }
 
-    if(len < (i64)sizeof(q2pc_msg)){
-        ch_log_fatal("Not enough space to send a Q2PC message. Needed %li, but found %li\n", sizeof(q2pc_msg), len);
+    if(len < msg_size){
+        ch_log_fatal("Not enough space to send a Q2PC message. Needed %li, but found %li\n", msg_size, len);
     }
 
     q2pc_msg* msg = (q2pc_msg*)data;
@@ -159,9 +182,14 @@ static void send_response(q2pc_msg_type_t msg_type, q2pc_msg* old_msg)
     msg->c_rto      = old_msg->c_rto;
     msg->ts         = old_msg->ts;
 
+    ch_log_debug3("Sent ts with %li\n", msg->ts) ;
+    ch_log_debug3("Sent crto with %i\n", msg->c_rto) ;
+    ch_log_debug3("Sent srto with %i\n", msg->s_rto) ;
+
+
     //Commit it
     for(int rtos = 0; rtos < RTOS_MAX; ){
-        int result = conn.end_write(&conn, sizeof(q2pc_msg));
+        int result = conn.end_write(&conn, msg_size);
 
         if(result == Q2PC_ENONE){
             break; //Can't do this inside the switch! :-P
@@ -173,8 +201,12 @@ static void send_response(q2pc_msg_type_t msg_type, q2pc_msg* old_msg)
         case Q2PC_RTOFIRED:
             rtos++;
             continue;
+        case Q2PC_EFIN:
+            ch_log_error("Stream has ended. Cannot write\n");
+            term(0);
         default:
-            ch_log_fatal("Unexpected value (%li)\n", result);
+            ch_log_error("Unexpected value (%li)\n", result);
+            term(0);
         }
     }
 }
@@ -208,7 +240,8 @@ static int do_phase1(i64 timeout)
         }
     default:
         ch_log_debug2("Q2PC Client: [M]<-- Unknown message (%i)\n", msg->type);
-        ch_log_fatal("Protocol failure, in phase 1 unexpected message type %i\n", msg->type);
+        ch_log_error("Protocol failure, in phase 1 unexpected message type %i\n", msg->type);
+        term(0);
     }
 
     vote_count++;
@@ -239,7 +272,8 @@ static int do_phase2(i64 timeout)
         result = 1;
         break;
     default:
-        ch_log_fatal("Protocol failure, in phase 2 unexpected message type %i\n", msg->type);
+        ch_log_error("Protocol failure, in phase 2 unexpected message type %i\n", msg->type);
+        term(0);
     }
 
 
@@ -247,11 +281,14 @@ static int do_phase2(i64 timeout)
 }
 
 
-void run_client(const transport_s* transport, i64 client_id, i64 wait_time)
+void run_client(const transport_s* transport, i64 client_id, i64 wait_time, i64 msize)
 {
     client_num = client_id;
-    init(transport);
     vote_count = client_id; //XXX HACK
+    msg_size  = MAX(msize, (i64)sizeof(q2pc_msg));
+    ch_log_info("Using message size of %li\n", msg_size);
+
+    init(transport);
 
     while(1){
         do_phase1(-1);

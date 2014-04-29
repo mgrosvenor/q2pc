@@ -75,7 +75,12 @@ static int conn_beg_read(struct q2pc_trans_conn_s* this, char** data_o, i64* len
 
     int result = priv->base.beg_read(&priv->base,data_o, len_o);
     if(result){
-        if(result != Q2PC_EAGAIN){
+
+        if(result == Q2PC_EFIN){
+            ch_log_debug3("RUDP beg read EFIN\n");
+        }
+
+        if(result != Q2PC_EAGAIN && result != Q2PC_EFIN){
             ch_log_warn("Base stream returned error %li\n", result);
         }
 
@@ -90,7 +95,7 @@ static int conn_beg_read(struct q2pc_trans_conn_s* this, char** data_o, i64* len
     if(priv->is_server){
         ch_log_debug3("Server got message with seq_no=%li\n", seq_no);
         if(seq_no != priv->seq_no){
-            ch_log_warn("Server dropping message with seq_no %li != %li\n", seq_no, priv->seq_no);
+            ch_log_debug1("Server dropping message with seq_no %li != %li\n", seq_no, priv->seq_no);
             priv->base.end_read(&priv->base);
             //pthread_mutex_unlock(&priv->mutex);
             return Q2PC_EAGAIN;
@@ -104,7 +109,7 @@ static int conn_beg_read(struct q2pc_trans_conn_s* this, char** data_o, i64* len
         ch_log_debug3("Client got message with seq_no=%li\n", seq_no);
 
         if(seq_no <= priv->seq_no){
-            ch_log_warn("Client dropping message with seq_no=%li <= %li\n", seq_no, priv->seq_no);
+            ch_log_debug1("Client dropping message with seq_no=%li <= %li\n", seq_no, priv->seq_no);
             priv->base.end_read(&priv->base);
             //pthread_mutex_unlock(&priv->mutex);
             return Q2PC_EAGAIN;
@@ -196,7 +201,10 @@ static int conn_end_write(struct q2pc_trans_conn_s* this, i64 len)
     if(priv->is_server) {
         char* rd_data;
         i64 rd_len;
-        conn_beg_read(this,&rd_data,&rd_len);
+        int result = conn_beg_read(this,&rd_data,&rd_len);
+        if(result == Q2PC_EFIN){
+            return result;
+        }
     }
 
     if(priv->current_seq != priv->seq_no){
@@ -218,14 +226,22 @@ static int conn_end_write(struct q2pc_trans_conn_s* this, i64 len)
     //XXX HACK!
     if(priv->is_server){
         ((q2pc_msg*)priv->write_data)->c_rto++;
+        ch_log_debug3("Set c_rto to %i\n", ((q2pc_msg*)priv->write_data)->c_rto) ;
     }
     else{
         ((q2pc_msg*)priv->write_data)->s_rto++;
+        ch_log_debug3("Set s_rto to %i\n", ((q2pc_msg*)priv->write_data)->s_rto) ;
     }
 
     int result = priv->base.end_write(&priv->base, len + sizeof(priv->seq_no));
     if(result){
-        ch_log_warn("Base stream returned error %li\n", result);
+
+        if(result == Q2PC_EFIN){
+            ch_log_debug3("RUDP end write EFIN\n");
+            return Q2PC_EFIN;
+        }
+
+        ch_log_warn("Base stream returned error %i\n", result);
     }
 
     gettimeofday(&priv->ts_start, NULL);

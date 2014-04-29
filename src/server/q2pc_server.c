@@ -32,6 +32,7 @@ volatile i64* votes_scoreboard   = NULL;
 volatile i64* votes_count        = NULL;
 volatile stat_t** stats_mem      = NULL;
 volatile bool ack_seen           = false;
+i64 msg_size                     = 0;
 
 //File globals
 static pthread_t* threads        = NULL;
@@ -40,9 +41,11 @@ static q2pc_trans* trans         = NULL;
 static i64 client_count          = 0;
 static i64* conn_rtofired_count  = NULL;
 
+
 static transport_e trans_type    = -1;
 static i64 stats_len             = 0;
-#define MAX_RTOS (20LL)
+static i64 total_rtos            = 0;
+#define MAX_RTOS (200L * 1000L)
 
 void cleanup()
 {
@@ -59,7 +62,7 @@ void cleanup()
         trans->delete(trans);
     }
 
-    int fd = open("q2pc_stats", O_WRONLY| O_CREAT | O_TRUNC,  S_IRWXU );
+    int fd = open("/tmp/q2pc_stats", O_WRONLY| O_CREAT | O_TRUNC,  S_IRWXU );
     if(fd < 0){
         ch_log_fatal("Could not open statistics output file error = %s\n", strerror(errno));
     }
@@ -74,6 +77,8 @@ void cleanup()
     i64 time_start;
     i64 time_end;
      */
+
+    ch_log_info("Total RTOS=%li\n", total_rtos);
 
     i64 start_us = 0;
 
@@ -96,7 +101,11 @@ void cleanup()
                     stats_mem[i][j].type);
             write(fd,tmp_line, len);
         }
+
+        free((void*)stats_mem[i]);
     }
+
+    free(stats_mem);
     ch_log_info("Writing stats to file...Done.\n");
 
     close(fd);
@@ -147,8 +156,9 @@ void do_connectall()
                 continue;
             }
 
-            if(len < (i64)sizeof(q2pc_msg)){
-                ch_log_fatal("Message is smaller than Q2PC message should be. (%li<%li)\n", len, sizeof(q2pc_msg));
+            if(len < msg_size){
+                ch_log_error("Message is smaller than Q2PC message should be. (%li<%li)\n", len, msg_size);
+                term(0);
             }
 
             q2pc_msg* msg = (q2pc_msg*)data;
@@ -156,7 +166,8 @@ void do_connectall()
             switch(msg->type){
                 case q2pc_con_msg: connected++; break;
                 default:
-                    ch_log_fatal("Unexpected message of type %i\n", msg->type);
+                    ch_log_error("Unexpected message of type %i\n", msg->type);
+                    term(0);
             }
 
             ch_log_debug3("Connection from %i at index %i\n", msg->src_hostid, i);
@@ -195,12 +206,6 @@ void server_init(const i64 thread_count, const i64 c_count, const transport_s* t
     }
     bzero((void*)conn_rtofired_count,sizeof(i64) * client_count);
 
-    posix_memalign((void*)&stats_mem, sizeof(stat_t*), sizeof(stat_t*) * thread_count);
-    if(!stats_mem){
-        ch_log_fatal("Could not allocate memory for stats arrays fired counter\n");
-    }
-    bzero((void*)stats_mem,sizeof(stat_t*) * thread_count);
-
 
     //Set up all the connections
     ch_log_info("Waiting for clients to connect...\n\r");
@@ -220,6 +225,14 @@ void server_init(const i64 thread_count, const i64 c_count, const transport_s* t
         ch_log_fatal("Could not allocate memory for votes counter\n");
     }
     bzero((void*)votes_count,sizeof(i64) * real_thread_count);
+
+
+    ch_log_debug1("Allocating stats mem for %li threads with size %i\n", real_thread_count, sizeof(stat_t*));
+    stats_mem = calloc(real_thread_count, sizeof(stat_t*));
+    if(!stats_mem){
+        ch_log_fatal("Could not allocate memory for stats arrays fired counter\n");
+    }
+    bzero((void*)stats_mem,sizeof(stat_t*) * real_thread_count);
 
 
     //Fire up the threads
@@ -247,6 +260,16 @@ void server_init(const i64 thread_count, const i64 c_count, const transport_s* t
 
 }
 
+i64 delimit(char* buff, i64 len)
+{
+    (void)buff;
+
+    if(len >= msg_size){
+        return msg_size;
+    }
+
+    return 0;
+}
 
 
 
@@ -264,8 +287,8 @@ static void send_request(q2pc_msg_type_t msg_type)
             ch_log_fatal("Could not complete broadcast message request\n");
         }
 
-        if(len < (i64)sizeof(q2pc_msg)){
-            ch_log_fatal("Not enough space to send a Q2PC message. Needed %li, but found %li\n", sizeof(q2pc_msg), len);
+        if(len < msg_size){
+            ch_log_fatal("Not enough space to send a Q2PC message. Needed %li, but found %li\n", msg_size, len);
         }
 
         struct timeval ts_start   = {0};
@@ -280,13 +303,13 @@ static void send_request(q2pc_msg_type_t msg_type)
         msg->s_rto      = 0;
         msg->c_rto      = 0;
 
-        conn->end_write(conn, sizeof(q2pc_msg));
+        conn->end_write(conn, msg_size);
         return;
     }
 
 
     //First, collect all the buffers
-    for(int i = 0; i < client_count; i++){
+    for(int i = 0; i < client_count && !stop_signal; i++){
 
         q2pc_trans_conn* conn = cons->first + i;
 
@@ -294,8 +317,8 @@ static void send_request(q2pc_msg_type_t msg_type)
             ch_log_fatal("Could not complete broadcast message request\n");
         }
 
-        if(len < (i64)sizeof(q2pc_msg)){
-            ch_log_fatal("Not enough space to send a Q2PC message. Needed %li, but found %li\n", sizeof(q2pc_msg), len);
+        if(len < msg_size){
+            ch_log_fatal("Not enough space to send a Q2PC message. Needed %li, but found %li\n", msg_size, len);
         }
 
         struct timeval ts_start   = {0};
@@ -308,6 +331,7 @@ static void send_request(q2pc_msg_type_t msg_type)
         msg->ts         = ts_start_us;
         msg->s_rto      = 0;
         msg->c_rto      = 0;
+        ch_log_debug3("Set ts to %li\n", msg->ts) ;
 
     }
 
@@ -315,8 +339,8 @@ static void send_request(q2pc_msg_type_t msg_type)
     int commited = 0;
     bzero(conn_rtofired_count,sizeof(i64) * client_count);
 
-    while(commited < client_count){
-        for(int i = 0; i < client_count; i++){
+    while(commited < client_count && !stop_signal){
+        for(int i = 0; i < client_count && !stop_signal; i++){
 
             //This is naughty, I'm overloading this, with negative numbers meaning the value is sent
             if(conn_rtofired_count[i] < 0LL){
@@ -326,13 +350,15 @@ static void send_request(q2pc_msg_type_t msg_type)
 
             q2pc_trans_conn* conn = cons->first + i;
 
-            int result = conn->end_write(conn, sizeof(q2pc_msg));
+            int result = conn->end_write(conn, msg_size);
             switch (result) {
                 case Q2PC_RTOFIRED:
                     if(conn_rtofired_count[i] >= MAX_RTOS){ //HACK MAGIC NUMBER!
-                        ch_log_fatal("Connection failed to client %li. Cluster failed after %li RTOS\n", i, MAX_RTOS);
+                        ch_log_error("Connection failed to client %li. Cluster failed after %li RTOS\n", i, MAX_RTOS);
+                        term(0);
                     }
                     conn_rtofired_count[i]++;
+                    total_rtos++;
                     continue;
                 case Q2PC_EAGAIN:
                     continue;
@@ -340,8 +366,12 @@ static void send_request(q2pc_msg_type_t msg_type)
                     conn_rtofired_count[i] = -1;
                     commited++;
                     continue;
+                case Q2PC_EFIN:
+                    ch_log_error("Cannot complete write request, cluster failed\n");
+                    term(0);
                 default:
-                    ch_log_fatal("Unexpected value (%li) from connection=%li\n", result, i);
+                    ch_log_error("Unexpected value (%li) from connection=%li\n", result, i);
+                    term(0);
             }
         }
     }
@@ -408,7 +438,7 @@ q2pc_commit_status_t do_phase1(i64 cluster_timeout_us)
 
     //Stop all the receiver threads
     dopause_all();
-    for(int i = 0; i < client_count; i++){
+    for(int i = 0; i < client_count && !stop_signal; i++){
         __builtin_prefetch((char*)votes_scoreboard + i + 1);
         switch(votes_scoreboard[i]){
             case q2pc_vote_yes_msg:
@@ -427,7 +457,8 @@ q2pc_commit_status_t do_phase1(i64 cluster_timeout_us)
 
             default:
                 ch_log_debug1("Q2PC: Server [M] phase 1 - client %li sent an unexpected message type %i\n",i,votes_scoreboard[i]);
-                ch_log_fatal("Protocol violation\n");
+                ch_log_error("Protocol violation\n");
+                term(0);
         }
     }
 
@@ -461,7 +492,8 @@ q2pc_commit_status_t do_phase2(q2pc_commit_status_t phase1_status, i64 cluster_t
         case q2pc_cluster_fail:
             return q2pc_cluster_fail;
         default:
-            ch_log_fatal("Internal error: unexpected result from phase 1\n");
+            ch_log_error("Internal error: unexpected result from phase 1\n");
+            term(0);
     }
 
     //wait for all the responses
@@ -470,7 +502,7 @@ q2pc_commit_status_t do_phase2(q2pc_commit_status_t phase1_status, i64 cluster_t
     //Stop all the receiver threads
     dopause_all();
     q2pc_commit_status_t result = q2pc_commit_success;
-    for(int i = 0; i < client_count; i++){
+    for(int i = 0; i < client_count && !stop_signal; i++){
         __builtin_prefetch((char*)votes_scoreboard + i + 1);
 
         switch(votes_scoreboard[i]){
@@ -501,7 +533,8 @@ q2pc_commit_status_t do_phase2(q2pc_commit_status_t phase1_status, i64 cluster_t
         case q2pc_request_success:  return q2pc_commit_success;
         case q2pc_request_fail:     return q2pc_commit_fail;
         default:
-            ch_log_fatal("Internal error: unexpected result from phase 1\n");
+            ch_log_error("Internal error: unexpected result from phase 1\n");
+            term(0);
     }
 
     //Unreachable
@@ -509,16 +542,19 @@ q2pc_commit_status_t do_phase2(q2pc_commit_status_t phase1_status, i64 cluster_t
 
 }
 
-void run_server(const i64 thread_count, const i64 client_count,  const transport_s* transport, i64 wait_time, i64 report_int, i64 stats_len)
+void run_server(const i64 thread_count, const i64 client_count,  const transport_s* transport, i64 wait_time, i64 report_int, i64 stats_len, i64 msize)
 {
-    //Set up all the threads, scoreboard, transport connections etc.
-    server_init(thread_count, client_count, transport, stats_len);
 
     //Statistics keeping
     struct timeval ts_start = {0};
     struct timeval ts_now   = {0};
     i64 ts_start_us         = 0;
     i64 ts_now_us           = 0;
+    msg_size                = MAX((i64)sizeof(q2pc_msg),msize);
+    ch_log_info("Using message size of %li\n", msg_size);
+
+    //Set up all the threads, scoreboard, transport connections etc.
+    server_init(thread_count, client_count, transport, stats_len);
 
     gettimeofday(&ts_start, NULL);
     ts_start_us = ts_start.tv_sec * 1000 * 1000 + ts_start.tv_usec;
@@ -545,11 +581,12 @@ void run_server(const i64 thread_count, const i64 client_count,  const transport
         status = do_phase2(status, wait_time);
 
         switch(status){
-            case q2pc_cluster_fail:     cleanup(); ch_log_fatal("Cluster failed\n"); break;
+            case q2pc_cluster_fail:     ch_log_error("Cluster failed\n"); term(0);break;
             case q2pc_commit_success:   ch_log_debug1("Commit success!\n"); break;
             case q2pc_commit_fail:      ch_log_debug1("Commit fail!\n"); break;
             default:
-                ch_log_fatal("Internal error: unexpected result from phase 2\n");
+                ch_log_error("Internal error: unexpected result from phase 2\n");
+                term(0);
         }
     }
 

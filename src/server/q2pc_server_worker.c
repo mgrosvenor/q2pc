@@ -28,7 +28,7 @@ extern volatile bool pause_signal;
 //static i64 real_thread_count            = 0;
 extern volatile i64* votes_scoreboard ;
 extern volatile i64* votes_count;
-extern volatile stat_t** stats_mem;
+extern stat_t** stats_mem;
 //static q2pc_trans* trans                = NULL;
 //static volatile i64 seq_no              = 0;
 
@@ -47,11 +47,11 @@ void* run_thread( void* p)
 
     i64 stats_idx = 0;
 
+    //ch_log_debug1("Allocating ")
     stats_mem[thread_id] = calloc(stats_len, sizeof(stat_t));
     if(!stats_mem[thread_id]){
         ch_log_fatal("Could not allocate %liB of memory for statistics counter\n", sizeof(stat_t) * stats_len);
     }
-    bzero((void*)stats_mem[thread_id],sizeof(stat_t) * stats_len);
 
 
     ch_log_debug3("Running worker thread\n");
@@ -70,9 +70,20 @@ void* run_thread( void* p)
             char* data = NULL;
             i64 len = 0;
             i64 result = con->beg_read(con,&data, &len);
-            if(result != Q2PC_ENONE){
-                //con->end_read(con);
-                continue;
+            if(result){
+                if(result == Q2PC_EAGAIN){
+                    continue;
+                }
+
+                if(result == Q2PC_EFIN){
+                    stop_signal = 1;
+                    BARRIER();
+                    ch_log_warn("Cannot read any more data from connection %li on thread %li. Stream has finished\n", i, thread_id);
+                    usleep(1000); //A a bit for the signal to propagate
+                    break;
+
+                }
+
             }
 
             q2pc_msg* msg = (q2pc_msg*)data;
@@ -102,6 +113,8 @@ void* run_thread( void* p)
             gettimeofday(&ts_end, NULL);
             const i64 ts_end_us = ts_end.tv_sec * 1000 * 1000 + ts_end.tv_usec;
 
+            ch_log_debug3("Got ts with %li\n", msg->ts) ;
+
             stats_mem[thread_id][stats_idx].time_end   = ts_end_us;
             stats_mem[thread_id][stats_idx].thread_id  = thread_id;
             stats_mem[thread_id][stats_idx].time_start = msg->ts;
@@ -112,9 +125,11 @@ void* run_thread( void* p)
 
 
             stats_idx++;
-            if(stats_idx > stats_len){
+            if(stats_idx >= stats_len){
                 stop_signal = 1;
                 BARRIER();
+                ch_log_warn("Run out of stats memory in thread %li Exiting\n", thread_id);
+                usleep(1000); //A a bit for the signal to propagate
                 break;
             }
 
@@ -123,7 +138,7 @@ void* run_thread( void* p)
         }
     }
 
-    sleep(4);
+
 
     ch_log_debug3("Cleaning up connections...\n");
     //We're done with the connections now, clean them up
