@@ -229,6 +229,12 @@ static int new_socket()
         ch_log_fatal("QJ set reuse address failed: %s\n",strerror(errno));
     }
 
+    int priority = 7;
+    if(setsockopt(sock_fd, SOL_SOCKET, SO_PRIORITY, &priority, sizeof(int)) < 0) {
+        ch_log_fatal("QJ set priority address failed: %s\n",strerror(errno));
+    }
+
+
     int flags = 0;
     flags |= O_NONBLOCK;
     if( fcntl(sock_fd, F_SETFL, flags) == -1){
